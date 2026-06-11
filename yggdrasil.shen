@@ -1,10 +1,10 @@
 \\                                          Yggdrasil 2.0
 \\                                    (c) Mark Tarver, 3 clause BSD
 \\
-\\ Tree-shaker for Shen programs, updated for ShenOSKernel 41.1.
+\\ Tree-shaker for Shen programs, updated for ShenOSKernel 41.2.
 \\
 \\ Stage 1 (this file, runs on any certified Shen): shake a program against
-\\ the 41.1 kernel and emit minimal KL + a manifest.  Stage 2 (per target,
+\\ the 41.2 kernel and emit minimal KL + a manifest.  Stage 2 (per target,
 \\ lives in each port repo): compile the shaken KL with the port's own
 \\ KL->native compiler.
 \\
@@ -15,16 +15,16 @@
 \\    yggdrasil.manifest.txt   line-oriented manifest (key=value)
 \\
 \\ Driver contract for builders: load kernel.kl, call (shen.initialise),
-\\ then load the user files in order.  In 41.1 (shen.initialise) performs
+\\ then load the user files in order.  In 41.2 (shen.initialise) performs
 \\ all global initialisation, so no separate globals file is needed.
 \\
 \\ Run from the Yggdrasil directory: paths below are relative.
 
-\\ No package wrapper: 41.1 has no stlib package to import from, and all
+\\ No package wrapper: 41.2 has no stlib package to import from, and all
 \\ stdlib functions are kernel-defined globals.  The public entry point is
 \\ explicitly dot-qualified instead.
 
-\\ ShenOSKernel-41.1 in canonical boot order (shen-cl boot.lsp order).
+\\ ShenOSKernel-41.2 in canonical boot order (shen-cl boot.lsp order).
 (set *kernel* ["KLambda/compiler.kl" "KLambda/toplevel.kl" "KLambda/core.kl"
  "KLambda/sys.kl" "KLambda/dict.kl" "KLambda/sequent.kl" "KLambda/yacc.kl"
  "KLambda/reader.kl" "KLambda/prolog.kl" "KLambda/track.kl" "KLambda/load.kl"
@@ -33,12 +33,12 @@
  "KLambda/extension-features.kl" "KLambda/extension-expand-dynamic.kl"
  "KLambda/extension-launcher.kl" "KLambda/stlib.kl"])
 
-(set *callgraph-cache* "KLambda/callgraph-41.1.shen")
+(set *callgraph-cache* "KLambda/callgraph-41.2.shen")
 
-\\ The 41.1 primitives: special forms plus everything the kernel calls but
+\\ The 41.2 primitives: special forms plus everything the kernel calls but
 \\ does not define.  Derived mechanically: symbols in call position across
 \\ KLambda/*.kl minus defun'd names.  prolog-memory, vector, variable?,
-\\ read-file-as-* moved into the kernel in 41.1 and are no longer here.
+\\ read-file-as-* moved into the kernel in 41.2 and are no longer here.
 (set *primitives* [if and or cond defun lambda let freeze type trap-error
       cons hd tl cons? intern pos tlstr cn str string? n->string string->n
       set value simple-error error-to-string
@@ -50,7 +50,7 @@
       *stinput* *stoutput*])
 
 \\ ===================== self-contained list helpers ======================
-\\ mapc/filter/remove-duplicates/copy-file live in 41.1's stlib, which is
+\\ mapc/filter/remove-duplicates/copy-file live in 41.2's stlib, which is
 \\ lazily materialised and absent from port runtimes; define our own.
 
 (define ygg.mapc
@@ -137,7 +137,7 @@
 \\ ====================== kernel call graph (cached) ======================
 \\ The original Yggdrasil computed a full transitive closure with Warshall's
 \\ algorithm - O(N^3) over every kernel symbol, which does not scale to the
-\\ 41.1 kernel (1129 defuns, ~700K of KL).  We only ever need reachability
+\\ 41.2 kernel (1129 defuns, ~700K of KL).  We only ever need reachability
 \\ from a seed set, so build the direct call graph once (cached to disk)
 \\ and run a worklist traversal over it per shake.  Full rationale,
 \\ including why a faster external closure (Julia/bitsets) is still the
@@ -425,7 +425,7 @@
   Dir UserFiles Fns Required Optional Globals NeedsEval ->
     (let Sink (open (@s Dir "/yggdrasil.manifest") out)
          W1 (pr-kl-line ["yggdrasil-manifest" 2] Sink)
-         W2 (pr-kl-line ["kernel-version" "41.1"] Sink)
+         W2 (pr-kl-line ["kernel-version" "41.2"] Sink)
          W3 (pr-kl-line ["kernel" "kernel.kl"] Sink)
          W4 (pr-kl-line ["init" shen.initialise] Sink)
          W5 (pr-kl-line ["user" | UserFiles] Sink)
@@ -440,7 +440,7 @@
   Dir UserFiles Fns Required Optional Globals NeedsEval ->
     (let Sink (open (@s Dir "/yggdrasil.manifest.txt") out)
          W1 (pr (make-string "manifest-version=2~%") Sink)
-         W2 (pr (make-string "kernel-version=41.1~%") Sink)
+         W2 (pr (make-string "kernel-version=41.2~%") Sink)
          W3 (pr (make-string "kernel=kernel.kl~%") Sink)
          W4 (pr (make-string "init=shen.initialise~%") Sink)
          W5 (ygg.mapc (/. F (pr (make-string "user=~A~%" F) Sink)) UserFiles)

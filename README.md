@@ -1,7 +1,7 @@
 # Yggdrasil 2.0
 
 A tree-shaker for [Shen](https://shenlanguage.org) programs, retargeted to
-ShenOSKernel **41.1**. Based on Mark Tarver's Yggdrasil 1.0 (3-clause BSD).
+ShenOSKernel **41.2**. Based on Mark Tarver's Yggdrasil 1.0 (3-clause BSD).
 
 Yggdrasil turns a Shen program into a minimal, standalone artifact in a
 target language: it computes which of the kernel's 1129 functions the
@@ -38,7 +38,7 @@ repo):
 | Rust | `shen-rust/crates/yggdrasil-build <dir> <outdir>` then `cargo build --release` | static binary (~9 MB, ~40 ms startup) |
 
 **Builder contract**: load `kernel.kl`'s defuns, call `(shen.initialise)`
-(41.1 consolidates all global initialisation there), then run each user
+(41.2 consolidates all global initialisation there), then run each user
 file's forms in manifest order — user files contain defuns *and* toplevel
 expressions that must execute in source order.
 
@@ -46,7 +46,7 @@ expressions that must execute in source order.
 
 The kernel call graph (1129 defuns, 5619 edges) is built once by walking
 every defun body for call-position symbols and cached as plain text
-(`KLambda/callgraph-41.1.shen`). Per shake, a pure worklist reachability
+(`KLambda/callgraph-41.2.shen`). Per shake, a pure worklist reachability
 pass runs from the seed set `{shen.initialise} ∪ symbols(user KL)`. See
 `docs/reachability.md` for why this replaced Yggdrasil 1.0's O(N³)
 Warshall transitive closure, and why fancier algorithms lose on this graph.
@@ -73,7 +73,7 @@ symbol named `eval` keeps the machinery.
   `.kl` files survive because the symbol walk doesn't care about tree
   shape; anything else (like the call-graph cache) must be written and
   parsed as plain text.
-- 41.1's stlib is lazily materialised: `mapc`, `filter`,
+- 41.2's stlib is lazily materialised: `mapc`, `filter`,
   `remove-duplicates`, `copy-file` don't exist in port runtimes.
   `yggdrasil.shen` carries its own `ygg.*` versions.
 - Compiled KL carries explicit property-table arguments — e.g. the
