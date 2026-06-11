@@ -30,12 +30,12 @@ writes to `out/`:
 **Stage 2 — build** (one builder per target port, living in that port's
 repo):
 
-| target | builder | output |
+| target | builder | output (eval-stripped fib) |
 |---|---|---|
-| Common Lisp / SBCL | `builders/lisp/build.sh <dir> <exe>` (this repo) | native executable (~36 MB) |
-| LuaJIT | `shen-lua/bin/yggdrasil-build.lua <dir> <out.lua>` | self-contained .lua (~2.3 MB, ~25 ms startup) |
-| Go | `shen-go/cmd/yggdrasil-build <dir> <outdir>` then `go build` | static binary (~10 MB, ≤10 ms startup, cross-compiles) |
-| Rust | `shen-cedar` (in progress) | static binary |
+| Common Lisp / SBCL | `builders/lisp/build.sh <dir> <exe>` (this repo) | native executable (~36 MB, dominated by SBCL image) |
+| LuaJIT | `shen-lua/bin/yggdrasil-build.lua <dir> <out.lua>` | self-contained .lua (~640 KB, ~25 ms startup) |
+| Go | `shen-go/cmd/yggdrasil-build <dir> <outdir>` then `go build` | static binary (~4.5 MB, ≤10 ms startup, cross-compiles linux/windows) |
+| Rust | `shen-cedar/crates/yggdrasil-build <dir> <outdir>` then `cargo build --release` | static binary (~9 MB, ~40 ms startup) |
 
 **Builder contract**: load `kernel.kl`'s defuns, call `(shen.initialise)`
 (41.1 consolidates all global initialisation there), then run each user
@@ -56,11 +56,15 @@ external-symbols registry, `*special*`, type-signature keys, lambda-form
 eta-entries) are treated as data, not calls; lambda-form entries are
 additionally filtered to the footprint at write time.
 
-Current floor is ~561 of 1129 defuns for any program: the `*macros*`
-registration keeps the macro expander — and through it the typechecker and
-`eval` — reachable, so every shaken program is eval-capable. An
-eval-stripping mode for programs that provably never `eval`/`load`/`tc` is
-planned.
+**Eval-stripping**: when the user KL never mentions an eval-capable entry
+point (`eval`, `eval-kl`, `load`, `tc`, `read`, `input+`, …), the shake
+additionally drops the `*macros*` registration and replaces
+`shen.f-error`'s interactive track-prompt with a plain `simple-error`,
+letting the macro expander, typechecker, reader and `eval` fall away.
+Stripped programs shake to ~100 kernel defuns (~66 KB of KL) and the
+manifest reports `needs-eval=false`; eval-capable programs keep the full
+machinery (~561 defuns). Detection over-approximates safely — a stray
+symbol named `eval` keeps the machinery.
 
 ## Gotchas (hard-won)
 
