@@ -85,7 +85,8 @@
                     KL         (map (fn read-file) KLFiles)
                     UserFs     (function-calls KL)
                     Foot       (footprint [shen.initialise | UserFs] Graph)
-                    FootCode   (footcode Foot Kernel)
+                    FootCode   (map (/. D (trim-lambda-forms D Foot))
+                                    (footcode Foot Kernel))
                     Prims      (find-primitives (append FootCode KL))
                     WriteK     (write-kl-file (@s Dir "/kernel.kl") FootCode)
                     UserOut    (write-user-files KLFiles KL Dir)
@@ -98,7 +99,9 @@
 \\ algorithm - O(N^3) over every kernel symbol, which does not scale to the
 \\ 41.1 kernel (1129 defuns, ~700K of KL).  We only ever need reachability
 \\ from a seed set, so build the direct call graph once (cached to disk)
-\\ and BFS over it per shake.
+\\ and run a worklist traversal over it per shake.  Full rationale,
+\\ including why a faster external closure (Julia/bitsets) is still the
+\\ wrong tool: docs/reachability.md.
 \\
 \\ The graph is a VALUE: a list of rows [F | Callees] threaded through the
 \\ footprint computation.  The cache file is plain text - one row per line,
@@ -153,7 +156,22 @@
   [[defun F _ Body] | Code] -> [[F | (called-fns Body)] | (graph-rows Code)]
   [_ | Code] -> (graph-rows Code))
 
+\\ Two kernel data tables masquerade as code and would otherwise drag
+\\ ~every public symbol into every footprint:
+\\   - the arity table literal is pure name/number data;
+\\   - lambda-form entries (cons F (lambda Y (F Y))) are eta-wrappers
+\\     whose only callee is their own key F.  We drop their edges here
+\\     and instead filter the entries to the footprint at write time
+\\     (see trim-lambda-forms), so a kept entry's F is in Foot already.
 (define called-fns
+  [shen.initialise-arity-table _] -> [shen.initialise-arity-table]
+  [shen.set-lambda-form-entry [cons _ _]] -> [shen.set-lambda-form-entry]
+  [put P shen.external-symbols _ | Rest] -> (union (called-fns put) (called-fns Rest))
+      where (symbol? P)
+  [set shen.*special* _] -> (called-fns set)
+  [set shen.*extraspecial* _] -> (called-fns set)
+  [shen.assoc-> K | R] -> (union (called-fns shen.assoc->) (called-fns R))
+      where (symbol? K)
   [X | Y] -> (union (called-fns X) (called-fns Y))
   F -> [F]   where (and (symbol? F) (kernel-defun? F))
   _ -> [])
@@ -201,6 +219,23 @@
 
 (define footcode
   Footprint Kernel -> (ygg.filter (/. Def (mentioned? Def Footprint)) Kernel))
+
+\\ Rewrite shen.initialise-lambda-forms to register eta-wrappers only for
+\\ footprint functions (its do-chain is right-nested KL).  Counterpart of
+\\ the called-fns special case above.
+(define trim-lambda-forms
+  [defun shen.initialise-lambda-forms P Body] Foot ->
+      [defun shen.initialise-lambda-forms P (trim-lf-chain Body Foot)]
+  Def _ -> Def)
+
+(define trim-lf-chain
+  [do E Rest] Foot -> (let R (trim-lf-chain Rest Foot)
+                           (if (lf-keep? E Foot) [do E R] R))
+  E Foot -> (if (lf-keep? E Foot) E true))
+
+(define lf-keep?
+  [shen.set-lambda-form-entry [cons F _]] Foot -> (element? F Foot)
+  _ _ -> true)
 
 (define mentioned?
   [defun F | _] Fs -> (element? F Fs)
