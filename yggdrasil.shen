@@ -18,7 +18,7 @@
 \\ then load the user files in order.  In 41.1 (shen.initialise) performs
 \\ all global initialisation, so no separate globals file is needed.
 \\
-\\ Run from the Ygggdrasil directory: paths below are relative.
+\\ Run from the Yggdrasil directory: paths below are relative.
 
 \\ No package wrapper: 41.1 has no stlib package to import from, and all
 \\ stdlib functions are kernel-defined globals.  The public entry point is

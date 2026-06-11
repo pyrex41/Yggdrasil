@@ -1,6 +1,6 @@
 \\                            Yggdrasil 2.0 - stage 2 builder (Common Lisp / SBCL)
 \\
-\\ Run via the shen-cl binary from the Ygggdrasil directory, after loading
+\\ Run via the shen-cl binary from the Yggdrasil directory, after loading
 \\ yggdrasil.shen (for the ygg.* list helpers):
 \\
 \\   shen eval -q -l yggdrasil.shen -l builders/lisp/build.shen \
