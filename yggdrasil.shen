@@ -90,7 +90,7 @@
                     Prims      (find-primitives (append FootCode KL))
                     WriteK     (write-kl-file (@s Dir "/kernel.kl") FootCode)
                     UserOut    (write-user-files KLFiles KL Dir)
-                    WriteM     (write-manifest Dir UserOut Prims)
+                    WriteM     (write-manifest Dir UserOut KL Prims)
                     Restore    (set *maximum-print-sequence-size* MaxPrint)
                     done))
 
@@ -305,34 +305,67 @@
           [Name | (write-user-files Files Codes Dir)]))
 
 \\ ============================ manifest ==================================
+\\ Contract additions requested by every stage-2 builder so far:
+\\   fn=<name> <arity>    one per user defun, so builders need not rescan
+\\                        the KL (arity bugs were the #1 stage-2 trap)
+\\   global=              *stinput* etc., split out of primitive=
+\\   primitive-optional=  guarded-dead unless the port's char-st*
+\\                        predicates return true; a port may omit them
+\\ Builders must ignore keys they do not recognise.
+
+(set *optional-primitives* [shen.write-string shen.read-unit-string])
+(set *global-primitives*   [*stinput* *stoutput*])
 
 (define write-manifest
-  Dir UserFiles Prims -> (let NeedsEval (element? eval-kl Prims)
-                              Sexp (write-manifest-sexp Dir UserFiles Prims NeedsEval)
-                              Txt  (write-manifest-txt Dir UserFiles Prims NeedsEval)
-                              done))
+  Dir UserFiles UserKL Prims ->
+     (let NeedsEval (element? eval-kl Prims)
+          Fns       (user-arities UserKL)
+          Globals   (ygg.filter (/. P (element? P (value *global-primitives*))) Prims)
+          Optional  (ygg.filter (/. P (element? P (value *optional-primitives*))) Prims)
+          Required  (ygg.filter (/. P (not (or (element? P Globals)
+                                               (element? P Optional)))) Prims)
+          Sexp (write-manifest-sexp Dir UserFiles Fns Required Optional Globals NeedsEval)
+          Txt  (write-manifest-txt Dir UserFiles Fns Required Optional Globals NeedsEval)
+          done))
+
+(define user-arities
+  [] -> []
+  [[[defun F Args | _] | Forms] | Files] -> [[F (ygg.len Args)]
+                                             | (user-arities [Forms | Files])]
+  [[_ | Forms] | Files] -> (user-arities [Forms | Files])
+  [[] | Files] -> (user-arities Files))
+
+(define ygg.len
+  [] -> 0
+  [_ | Xs] -> (+ 1 (ygg.len Xs)))
 
 (define write-manifest-sexp
-  Dir UserFiles Prims NeedsEval ->
+  Dir UserFiles Fns Required Optional Globals NeedsEval ->
     (let Sink (open (@s Dir "/yggdrasil.manifest") out)
-         W1 (pr-kl-line ["yggdrasil-manifest" 1] Sink)
+         W1 (pr-kl-line ["yggdrasil-manifest" 2] Sink)
          W2 (pr-kl-line ["kernel-version" "41.1"] Sink)
          W3 (pr-kl-line ["kernel" "kernel.kl"] Sink)
          W4 (pr-kl-line ["init" shen.initialise] Sink)
          W5 (pr-kl-line ["user" | UserFiles] Sink)
-         W6 (pr-kl-line ["primitives" | Prims] Sink)
-         W7 (pr-kl-line ["needs-eval" NeedsEval] Sink)
+         W6 (ygg.mapc (/. FA (pr-kl-line ["fn" | FA] Sink)) Fns)
+         W7 (pr-kl-line ["primitives" | Required] Sink)
+         W8 (pr-kl-line ["primitives-optional" | Optional] Sink)
+         W9 (pr-kl-line ["globals" | Globals] Sink)
+         WA (pr-kl-line ["needs-eval" NeedsEval] Sink)
          (close Sink)))
 
 (define write-manifest-txt
-  Dir UserFiles Prims NeedsEval ->
+  Dir UserFiles Fns Required Optional Globals NeedsEval ->
     (let Sink (open (@s Dir "/yggdrasil.manifest.txt") out)
-         W1 (pr (make-string "manifest-version=1~%") Sink)
+         W1 (pr (make-string "manifest-version=2~%") Sink)
          W2 (pr (make-string "kernel-version=41.1~%") Sink)
          W3 (pr (make-string "kernel=kernel.kl~%") Sink)
          W4 (pr (make-string "init=shen.initialise~%") Sink)
          W5 (ygg.mapc (/. F (pr (make-string "user=~A~%" F) Sink)) UserFiles)
-         W6 (ygg.mapc (/. P (pr (make-string "primitive=~A~%" P) Sink)) Prims)
-         W7 (pr (make-string "needs-eval=~A~%" NeedsEval) Sink)
+         W6 (ygg.mapc (/. FA (pr (make-string "fn=~A ~A~%" (hd FA) (hd (tl FA))) Sink)) Fns)
+         W7 (ygg.mapc (/. P (pr (make-string "primitive=~A~%" P) Sink)) Required)
+         W8 (ygg.mapc (/. P (pr (make-string "primitive-optional=~A~%" P) Sink)) Optional)
+         W9 (ygg.mapc (/. P (pr (make-string "global=~A~%" P) Sink)) Globals)
+         WA (pr (make-string "needs-eval=~A~%" NeedsEval) Sink)
          (close Sink)))
 
