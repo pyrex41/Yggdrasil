@@ -1,254 +1,277 @@
-\\                                          Yggdrasil 1.0 
+\\                                          Yggdrasil 2.0
 \\                                    (c) Mark Tarver, 3 clause BSD
+\\
+\\ Tree-shaker for Shen programs, updated for ShenOSKernel 41.1.
+\\
+\\ Stage 1 (this file, runs on any certified Shen): shake a program against
+\\ the 41.1 kernel and emit minimal KL + a manifest.  Stage 2 (per target,
+\\ lives in each port repo): compile the shaken KL with the port's own
+\\ KL->native compiler.
+\\
+\\ (yggdrasil.shake ["prog.shen"] "out") writes to out/:
+\\    kernel.kl                shaken kernel defuns, in load order
+\\    <prog>.kl                user code compiled to KL
+\\    yggdrasil.manifest       sexp manifest
+\\    yggdrasil.manifest.txt   line-oriented manifest (key=value)
+\\
+\\ Driver contract for builders: load kernel.kl, call (shen.initialise),
+\\ then load the user files in order.  In 41.1 (shen.initialise) performs
+\\ all global initialisation, so no separate globals file is needed.
+\\
+\\ Run from the Ygggdrasil directory: paths below are relative.
 
+\\ No package wrapper: 41.1 has no stlib package to import from, and all
+\\ stdlib functions are kernel-defined globals.  The public entry point is
+\\ explicitly dot-qualified instead.
 
-(package yggdrasil (append (external stlib) [yggdrasil compiler cl.kl-to-lisp done boilerplate driver])
+\\ ShenOSKernel-41.1 in canonical boot order (shen-cl boot.lsp order).
+(set *kernel* ["KLambda/compiler.kl" "KLambda/toplevel.kl" "KLambda/core.kl"
+ "KLambda/sys.kl" "KLambda/dict.kl" "KLambda/sequent.kl" "KLambda/yacc.kl"
+ "KLambda/reader.kl" "KLambda/prolog.kl" "KLambda/track.kl" "KLambda/load.kl"
+ "KLambda/writer.kl" "KLambda/macros.kl" "KLambda/declarations.kl"
+ "KLambda/types.kl" "KLambda/t-star.kl" "KLambda/init.kl"
+ "KLambda/extension-features.kl" "KLambda/extension-expand-dynamic.kl"
+ "KLambda/extension-launcher.kl" "KLambda/stlib.kl"])
 
-\\(cd "C:\Users\shend\OneDrive\Desktop\Shen\Yggdrasil")
- 
-(set *kernel* ["KLambda\sequent.kl" "KLambda\sys.kl" "KLambda\toplevel.kl"
-"KLambda\track.kl" "KLambda\t-star.kl" "KLambda\types.kl" "KLambda\writer.kl"
-"KLambda\yacc.kl" "KLambda\backend.kl" "KLambda\core.kl" "KLambda\declarations.kl"
-"KLambda\load.kl" "KLambda\macros.kl" "KLambda\prolog.kl" "KLambda\reader.kl"
-"KLambda\complex.dtype.kl" "KLambda\complex.kl" "KLambda\data.kl"
-"KLambda\date.kl" "KLambda\encrypt.kl" "KLambda\files.kl"
-"KLambda\lists.kl" "KLambda\maths.kl" "KLambda\numerals.dtype.kl"
-"KLambda\numerals.kl" "KLambda\prettyprint.kl" "KLambda\rationals.dtype.kl"
-"KLambda\rationals.kl" "KLambda\smart.kl" "KLambda\strings.kl"
-"KLambda\symbols1.kl" "KLambda\symbols2.kl" "KLambda\tuples.kl"
-"KLambda\vectors.kl"]) 
-   
-(define yggdrasil
-   Language Files Dir -> (let  FDG      (if (bound? *ttable*)
-                                        (value *ttable*)
-                                        (fdg))
-                               Compiler     (get Language compiler)             
-                               KLFiles      (map (fn bootstrap) Files)
-                               KL           (map (fn read-file) KLFiles)
-                               UserFs       (function-calls KL)
-                               Footprint    (footprint UserFs)
-                               Kernel       (mapcan (fn read-file) (value *kernel*))
-                               FootCode     (footcode Footprint Kernel)
-                               Globals      (find-globals FootCode)
-                               GlobalCode   (global-code Globals)                                
-                               Primitives   (find-primitives (append FootCode GlobalCode KL))
-                               PrimFiles    (primfiles Primitives Language)
-                              \\ PR           (print 1)                                                             
-                               CopyPrim     (copy-primitive-files PrimFiles Dir)
-                               \\ PR           (print 2)
-                               Sink         (open (@s Dir "/boilerplate." Language) out)
-                               Boilerplate  (pr (get Language boilerplate) Sink)
-                               Close        (close Sink)  
-                              \\ PR           (print 3)
-                               Sink         (open (@s Dir "/globals." Language) out)
-                               GlobalOb     (mapc (/. X (pr (Compiler X) Sink)) GlobalCode) 
-                               Close        (close Sink)
-                              \\ PR           (print 4)
-                               Sink         (open (@s Dir "/kernel." Language) out)
-                               ObKernel     (mapc (/. X (pr (Compiler X) Sink)) FootCode)
-                              \\ PR           (print 5)
-                               Close        (close Sink)
-                               OBUser       (obuser-files KLFiles KL Language Compiler Dir)                               
-                               \\PR           (print 6)
-                               Sink         (open (@s Dir "/driver." Language) out)
-                               DriverCode   ((get Language driver) (cn "boilerplate." Language)
-                                                                   CopyPrim
-                                                                   (cn "globals." Language)
-                                                                   (cn "kernel." Language)
-                                                                 OBUser)
-                               \\PR           (print 7)                                    
-                               Driver       (pr DriverCode Sink)                                    
-                               Close        (close Sink)
-                               \\PR           (print 8)
-                               done))
-                               
-(define copy-primitive-files
-  {(list string) --> string --> (list string)}
-  Files Dir -> (map (/. X (copy-primitive-file X Dir)) Files))
-  
-(define copy-primitive-file
-  {string --> string --> string}
-  File Dir -> (let Truncate (truncate-filename File "")
-                   Copy (copy-file File (@s Dir "/" Truncate))
-                   Truncate))
-                   
-(define truncate-filename
-  {string --> string --> string}
-  "" Out -> Out
-  (@s "/" S) _ -> (truncate-filename S "")
-  (@s S Ss) Out -> (truncate-filename Ss (cn Out S)))                               
-                           
-(define find-globals
-  X -> [X]     where (bound? X)
-  [X | Y] -> (union (find-globals X) (find-globals Y))
+(set *callgraph-cache* "KLambda/callgraph-41.1.shen")
+
+\\ The 41.1 primitives: special forms plus everything the kernel calls but
+\\ does not define.  Derived mechanically: symbols in call position across
+\\ KLambda/*.kl minus defun'd names.  prolog-memory, vector, variable?,
+\\ read-file-as-* moved into the kernel in 41.1 and are no longer here.
+(set *primitives* [if and or cond defun lambda let freeze type trap-error
+      cons hd tl cons? intern pos tlstr cn str string? n->string string->n
+      set value simple-error error-to-string
+      absvector address-> <-address absvector?
+      write-byte read-byte open close get-time eval-kl
+      = + - * / > < >= <= number?
+      shen.char-stinput? shen.char-stoutput?
+      shen.read-unit-string shen.write-string
+      *stinput* *stoutput*])
+
+\\ ===================== self-contained list helpers ======================
+\\ mapc/filter/remove-duplicates/copy-file live in 41.1's stlib, which is
+\\ lazily materialised and absent from port runtimes; define our own.
+
+(define ygg.mapc
+  _ [] -> done
+  F [X | Xs] -> (do (F X) (ygg.mapc F Xs)))
+
+(define ygg.filter
+  _ [] -> []
+  F [X | Xs] -> [X | (ygg.filter F Xs)]  where (F X)
+  F [_ | Xs] -> (ygg.filter F Xs))
+
+(define ygg.remove-dups
+  [] -> []
+  [X | Xs] -> (ygg.remove-dups Xs)  where (element? X Xs)
+  [X | Xs] -> [X | (ygg.remove-dups Xs)])
+
+(define ygg.copy-file
+  From To -> (let Bytes (read-file-as-bytelist From)
+                  Sink  (open To out)
+                  Write (ygg.mapc (/. B (write-byte B Sink)) Bytes)
+                  Close (close Sink)
+                  To))
+
+\\ ============================ stage 1: shake ============================
+
+(define yggdrasil.shake
+  Files Dir -> (let MaxPrint   (value *maximum-print-sequence-size*)
+                    Unlimit    (set *maximum-print-sequence-size* 1000000000)
+                    Kernel     (kernel-code)
+                    KLFiles    (map (fn bootstrap) Files)
+                    KL         (map (fn read-file) KLFiles)
+                    UserFs     (function-calls KL)
+                    Foot       (footprint [shen.initialise | UserFs])
+                    FootCode   (footcode Foot Kernel)
+                    Prims      (find-primitives (append FootCode KL))
+                    WriteK     (write-kl-file (@s Dir "/kernel.kl") FootCode)
+                    UserOut    (write-user-files KLFiles KL Dir)
+                    WriteM     (write-manifest Dir UserOut Prims)
+                    Restore    (set *maximum-print-sequence-size* MaxPrint)
+                    done))
+
+\\ ====================== kernel call graph (cached) ======================
+\\ The original Yggdrasil computed a full transitive closure with Warshall's
+\\ algorithm - O(N^3) over every kernel symbol, which does not scale to the
+\\ 41.1 kernel (1129 defuns, ~700K of KL).  We only ever need reachability
+\\ from a seed set, so build the direct call graph once (cached to disk)
+\\ and BFS over it per shake.
+
+(define kernel-code
+  -> (let Code  (mapcan (fn read-file) (value *kernel*))
+          Graph (ensure-call-graph Code)
+          Code))
+
+(define ensure-call-graph
+  _ -> cached  where (bound? *kernel-fns*)
+  Code -> (trap-error (load-call-graph) (/. E (build-call-graph Code))))
+
+(define load-call-graph
+  -> (let Rows    (read-file (value *callgraph-cache*))
+          Check   (if (empty? Rows) (error "empty call graph cache~%") loaded)
+          Install (ygg.mapc (/. Row (put (hd Row) calls (tl Row))) Rows)
+          (set *kernel-fns* (map (fn hd) Rows))))
+
+(define build-call-graph
+  Code -> (let Fs    (defun-names Code)
+               SetFs (set *kernel-fns* Fs)
+               Mark  (ygg.mapc (/. F (put F defp true)) Fs)
+               Edges (ygg.mapc (fn graph-defun) Code)
+               Save  (save-call-graph)
+               (value *kernel-fns*)))
+
+(define defun-names
+  [] -> []
+  [[defun F | _] | Code] -> [F | (defun-names Code)]
+  [_ | Code] -> (defun-names Code))
+
+(define graph-defun
+  [defun F _ Body] -> (put F calls (called-fns Body))
+  _ -> not-a-defun)
+
+(define called-fns
+  [X | Y] -> (union (called-fns X) (called-fns Y))
+  F -> [F]   where (and (symbol? F) (kernel-defun? F))
   _ -> [])
-  
+
+(define kernel-defun?
+  F -> (trap-error (get F defp) (/. E false)))
+
+(define calls-of
+  F -> (trap-error (get F calls) (/. E [])))
+
+\\ Rows are written in KL paren syntax via pr-kl: read-file parses (a b c)
+\\ as a plain list, whereas bracket syntax [a b c] would read back as an
+\\ unevaluated (cons a (cons b ...)) AST.
+(define save-call-graph
+  -> (let Sink  (open (value *callgraph-cache*) out)
+          Write (ygg.mapc (/. F (pr-kl-line [F | (calls-of F)] Sink))
+                          (value *kernel-fns*))
+          Close (close Sink)
+          saved))
+
+\\ ============================ footprint =================================
+
+(define footprint
+  Seeds -> (let Clear (ygg.mapc (/. F (put F seen false)) (value *kernel-fns*))
+                (bfs Seeds [])))
+
+(define bfs
+  [] Acc -> Acc
+  [F | Fs] Acc -> (bfs Fs Acc)  where (seen? F)
+  [F | Fs] Acc -> (let Mark (put F seen true)
+                       (bfs (append (calls-of F) Fs) [F | Acc])))
+
+(define seen?
+  F -> (trap-error (get F seen) (/. E (do (put F seen true) false))))
+
+(define function-calls
+  [X | Y] -> (union (function-calls X) (function-calls Y))
+  V -> []   where (variable? V)
+  F -> [F]  where (symbol? F)
+  _ -> [])
+
+(define footcode
+  Footprint Kernel -> (ygg.filter (/. Def (mentioned? Def Footprint)) Kernel))
+
+(define mentioned?
+  [defun F | _] Fs -> (element? F Fs)
+  _ _ -> false)
+
+\\ ============================ primitives ================================
+
 (define find-primitives
   X -> [X]     where (primitive? X)
   [X | Y] -> (union (find-primitives X) (find-primitives Y))
   _ -> [])
-  
-(define primfiles
-  Primitives Language -> (remove-duplicates (mapcan (/. Primitive (get Primitive Language)) Primitives)))
-    
+
 (define primitive?
   {symbol --> boolean}
   X -> (element? X (value *primitives*)))
-  
-(set *primitives* [if and or cond intern prolog-memory vector
-      pos tlstr cn str string? n->string string->n
-      set value simple-error trap-error error-to-string
-      cons hd tl cons? absvector address-> <-address absvector?
-      write-byte read-byte open close + - * / > < >= <= number?
-      defun lambda let = eval-kl freeze type get-time *stinput* 
-      *stoutput* shen.char-stinput? shen.char-stoutput? 
-			shen.write-string shen.read-unit-string set])  
-  
-(define global-code
-  {(list symbol) --> (list s-expr)}
-  Globals -> (mapcan (fn global-assignment) Globals))  
-  
-(define global-assignment
-  {symbol --> s-expr}
-  shen.*history*         -> [[set shen.*history* []]]
-  shen.*tc*              -> [[set shen.*tc* false]]
-  *property-vector*      -> [[set *property-vector* [vector 20000]]]
-  shen.*gensym*          -> [[set shen.*gensym* 0]]
-  shen.*tracking*        -> [[set shen.*tracking* []]]
-  shen.*profiled*        -> [[set shen.*profiled* []]]
-  *home-directory*       -> [[set *home-directory* ""]]
-  shen.*special*         -> [[set shen.*special* [cons @p [cons @s [cons @v 
-                                                  [cons cons [cons lambda [cons let 
-                                                    [cons where [cons set [cons open 
-                                                      [cons input+ [cons type [] ]]]]]]]]]]]]]
-  shen.*extraspecial*    -> [[set shen.*extraspecial* []]]  
-  shen.*spy*             -> [[set shen.*spy* false]]
-  shen.*datatypes*       -> [[set shen.*datatypes* []]]
-  shen.*alldatatypes*    -> [[set shen.*alldatatypes* []]]
-  shen.*shen-type-theory-enabled?* -> [[set shen.*shen-type-theory-enabled?* true]]
-  shen.*package*         -> [[set shen.*package* null]]
-  shen.*synonyms*        -> [[set shen.*synonyms* []]]
-  shen.*system*          -> [[set shen.*system* []]]
-  shen.*sigf*            -> [[set shen.*sigf* []]]
-  shen.*occurs*          -> [[set shen.*occurs* true]]
-  shen.*factorise?*      -> [[set shen.*factorise?* false]]
-  shen.*maxinferences*   -> [[set shen.*maxinferences* 1000000]]
-  *maximum-print-sequence-size* -> [[set *maximum-print-sequence-size* 20]]
-  shen.*call*            -> [[set shen.*call* 0]]
-  shen.*infs*            -> [[set shen.*infs* 0]]
-  *hush*                 -> [[set *hush* false]]
-  shen.*optimise*        -> [[set shen.*optimise* false]]
-  *version*              -> [[set *version* "34.6"]]
-  shen.*step*            -> [[set shen.*step* false]]
-  shen.*it*              -> [[set shen.*it* ""]]
-  shen.*residue*         -> [[set shen.*residue* []]]
-  *stoutput*             -> []
-  *stinput*              -> []
-  *macros*               -> [[set *macros* []]]
-  shen.*prolog-vector*   -> [[prolog-memory 1e4]]
-  /                      -> [] 
-  *                      -> []
-  +                      -> []
-  -                      -> []
-  shen.*lambdatable*     -> [[set shen.*lambdatable* []]]
-  shen.*loading?*        -> [[set shen.*loading?* false]]  )                      
-                           
-(define obuser-files
-   [] [] _ _ _ -> []
-   [File | Files] [KL | KLs] Language Compiler Dir -> (let ObFile (file-extension File (cn "." Language))
-                                                           Sink (open (@s Dir "/" ObFile) out)
-                                                           Obcode (map Compiler KL)
-                                                           Write  (mapc (/. X (pr X Sink)) Obcode)
-                                                           Close (close Sink)
-                                                          [ObFile | (obuser-files Files KLs Language Compiler Dir)]))                             
-                 
-(define function-calls
-  [X | Y] -> (union (function-calls X) (function-calls Y))
-  V -> []   where (variable? V)
-  F -> [F]    where (symbol? F)
-  _ -> []) 
-  
-(define footprint
-  {(list symbol) --> (list symbol)}
-  UserFs -> (mapcan (/. F (assoc F (value *ttable*))) UserFs))   
-  
-(define footcode
-  Footprint Kernel -> (filter (/. Def (mentioned? Def Footprint)) Kernel)) 
-                 
-(define mentioned?
-  [defun F | _] Fs -> (element? F Fs)
-  _ _ -> false)                 
-   
-(define fdg
-  {--> (list (list symbol))}
-        -> (let Files (value *kernel*)
-             \\   MaxPrint (value *maximum-print-sequence-size*)
-             \\   SetMaxPrint (set *maximum-print-sequence-size* 1e5)
-                Code   (mapcan (fn read-file) Files)
-                Fs     (extract-Fs Code)
-                Matrix (warshall Fs (/. F1 F2 (calls? F1 F2 Code)))
-                TTable (set *ttable* [])
-                ComputeTTable (compute-fdg-from-matrix Fs Matrix)
-               \\ Write (write-table-to-file)
-             \\   ResetMaxPrint (set *maximum-print-sequence-size* MaxPrint)
-                (value *ttable*)))
-                
-\\(define write-table-to-file
- \\ {--> (list A)}
- \\ -> (let Sink (open "ttrans.shen" out)
-   \\       Write (mapc (/. X (pr (make-string "~A~%" X) Sink)) (value *ttable*))
-      \\    (close Sink)))                
-                
-(define compute-fdg-from-matrix
-  {(list symbol) --> (vector (vector boolean)) --> (list (list symbol))}
-   Fs Matrix -> (let N (length Fs)
-                   (for X = 1 (<= X N)
-                      (for Y = 1 (<= Y N)
-                         (if (:= Matrix [X Y])
-                             (assoc-add (nth X Fs) (nth Y Fs))
-                             [])))))
-                             
-(define assoc-add
-  {symbol --> symbol --> (list (list symbol))}
-   Caller Called -> (set *ttable* (assoc-add-h Caller Called (value *ttable*))))
-   
-(define assoc-add-h
-  {A --> A --> (list (list A)) --> (list (list A))}
-   Caller Called [] -> [[Caller Called]]
-   Caller Called [[Caller | Calls] | Table] -> [[Caller Called | Calls] | Table]
-   Caller Called [Entry | Table] -> [Entry | (assoc-add-h Caller Called Table)])                                            
-                
-(define calls?
-  F1 F2 Code -> (let DefF1 (def F1 Code)
-                     (> (occurrences F2 DefF1) 0)))
-                     
-(define extract-Fs
-  [X | Y] -> (union (extract-Fs X) (extract-Fs Y))
-  X -> []    where (variable? X)
-  X -> [X]   where (symbol? X)
-  _ -> [])                     
-                     
-(define def
-  _ [] -> []
-  F1 [[defun F1 _ Body] | _] -> Body
-  F1 [[set F1 Body] | _] -> Body
-  F1 [_ | Defs] -> (def F1 Defs))                                     
-  
-(define warshall
-  {(list A) --> (A --> A --> boolean) --> (vector (vector boolean))}
-    L R? -> (let N        (length L)
-                 Matrix   (array [N N])
-                 Populate (for X = 1 (<= X N)
-                            (for Y = 1 (<= Y N)
-                             (Matrix [X Y] := (R? (nth X L) (nth Y L)))))
-                 Warshall (iterate-warshall N Matrix)
-                 Matrix))
-                 
-(define iterate-warshall 
-  {number --> (vector (vector boolean)) --> (vector (vector boolean))}
-   N Matrix -> (for J = 1 (<= J N)
-                  (for I = 1 (<= I N)
-                    (if (and (not (= I J)) (:= Matrix [I J]))
-                       (for K = 1 (<= K N)
-                         (Matrix [I K] := (or (:= Matrix [I K]) (:= Matrix [J K]))))
-                       Matrix)))) )
+
+\\ Used by backends that map primitives to copyable implementation files
+\\ (the Tarver model, retained for the Lisp backend).
+(define primfiles
+  Primitives Language -> (ygg.remove-dups
+                          (mapcan (/. Primitive (get Primitive Language)) Primitives)))
+
+(define copy-primitive-files
+  {(list string) --> string --> (list string)}
+  Files Dir -> (map (/. X (copy-primitive-file X Dir)) Files))
+
+(define copy-primitive-file
+  {string --> string --> string}
+  File Dir -> (let Truncate (truncate-filename File "")
+                   Copy (ygg.copy-file File (@s Dir "/" Truncate))
+                   Truncate))
+
+(define truncate-filename
+  {string --> string --> string}
+  "" Out -> Out
+  (@s "/" S) _ -> (truncate-filename S "")
+  (@s S Ss) Out -> (truncate-filename Ss (cn Out S)))
+
+\\ ========================== writing KL files ============================
+\\ Shen's printer renders lists in Shen syntax ([...]), but .kl files must
+\\ be in KL syntax ((...)), so we print cons trees ourselves.
+
+(define write-kl-file
+  File Code -> (let Sink  (open File out)
+                    Write (ygg.mapc (/. X (do (pr-kl X Sink)
+                                          (pr (make-string "~%~%") Sink))) Code)
+                    Close (close Sink)
+                    File))
+
+(define pr-kl
+  [] Sink -> (pr "()" Sink)
+  [X | Xs] Sink -> (do (pr "(" Sink) (pr-kl X Sink) (pr-kl-body Xs Sink))
+  X Sink -> (pr (make-string "~S" X) Sink))
+
+(define pr-kl-body
+  [] Sink -> (pr ")" Sink)
+  [X | Xs] Sink -> (do (pr " " Sink) (pr-kl X Sink) (pr-kl-body Xs Sink)))
+
+(define pr-kl-line
+  X Sink -> (do (pr-kl X Sink) (pr (make-string "~%") Sink)))
+
+(define write-user-files
+  [] [] _ -> []
+  [File | Files] [Code | Codes] Dir ->
+     (let Name  (truncate-filename File "")
+          Write (write-kl-file (@s Dir "/" Name) Code)
+          [Name | (write-user-files Files Codes Dir)]))
+
+\\ ============================ manifest ==================================
+
+(define write-manifest
+  Dir UserFiles Prims -> (let NeedsEval (element? eval-kl Prims)
+                              Sexp (write-manifest-sexp Dir UserFiles Prims NeedsEval)
+                              Txt  (write-manifest-txt Dir UserFiles Prims NeedsEval)
+                              done))
+
+(define write-manifest-sexp
+  Dir UserFiles Prims NeedsEval ->
+    (let Sink (open (@s Dir "/yggdrasil.manifest") out)
+         W1 (pr-kl-line ["yggdrasil-manifest" 1] Sink)
+         W2 (pr-kl-line ["kernel-version" "41.1"] Sink)
+         W3 (pr-kl-line ["kernel" "kernel.kl"] Sink)
+         W4 (pr-kl-line ["init" shen.initialise] Sink)
+         W5 (pr-kl-line ["user" | UserFiles] Sink)
+         W6 (pr-kl-line ["primitives" | Prims] Sink)
+         W7 (pr-kl-line ["needs-eval" NeedsEval] Sink)
+         (close Sink)))
+
+(define write-manifest-txt
+  Dir UserFiles Prims NeedsEval ->
+    (let Sink (open (@s Dir "/yggdrasil.manifest.txt") out)
+         W1 (pr (make-string "manifest-version=1~%") Sink)
+         W2 (pr (make-string "kernel-version=41.1~%") Sink)
+         W3 (pr (make-string "kernel=kernel.kl~%") Sink)
+         W4 (pr (make-string "init=shen.initialise~%") Sink)
+         W5 (ygg.mapc (/. F (pr (make-string "user=~A~%" F) Sink)) UserFiles)
+         W6 (ygg.mapc (/. P (pr (make-string "primitive=~A~%" P) Sink)) Prims)
+         W7 (pr (make-string "needs-eval=~A~%" NeedsEval) Sink)
+         (close Sink)))
+
