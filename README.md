@@ -35,7 +35,7 @@ repo):
 | Common Lisp / SBCL | `builders/lisp/build.sh <dir> <exe>` (this repo) | native executable (~36 MB, dominated by SBCL image) |
 | LuaJIT | `shen-lua/bin/yggdrasil-build.lua <dir> <out.lua>` | self-contained .lua (~640 KB, ~25 ms startup) |
 | Go | `shen-go/cmd/yggdrasil-build <dir> <outdir>` then `go build` | static binary (~4.5 MB, ≤10 ms startup, cross-compiles linux/windows) |
-| Rust | `shen-cedar/crates/yggdrasil-build <dir> <outdir>` then `cargo build --release` | static binary (~9 MB, ~40 ms startup) |
+| Rust | `shen-rust/crates/yggdrasil-build <dir> <outdir>` then `cargo build --release` | static binary (~9 MB, ~40 ms startup) |
 
 **Builder contract**: load `kernel.kl`'s defuns, call `(shen.initialise)`
 (41.1 consolidates all global initialisation there), then run each user
