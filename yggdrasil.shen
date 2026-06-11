@@ -80,10 +80,11 @@
   Files Dir -> (let MaxPrint   (value *maximum-print-sequence-size*)
                     Unlimit    (set *maximum-print-sequence-size* 1000000000)
                     Kernel     (kernel-code)
+                    Graph      (call-graph Kernel)
                     KLFiles    (map (fn bootstrap) Files)
                     KL         (map (fn read-file) KLFiles)
                     UserFs     (function-calls KL)
-                    Foot       (footprint [shen.initialise | UserFs])
+                    Foot       (footprint [shen.initialise | UserFs] Graph)
                     FootCode   (footcode Foot Kernel)
                     Prims      (find-primitives (append FootCode KL))
                     WriteK     (write-kl-file (@s Dir "/kernel.kl") FootCode)
@@ -98,74 +99,99 @@
 \\ 41.1 kernel (1129 defuns, ~700K of KL).  We only ever need reachability
 \\ from a seed set, so build the direct call graph once (cached to disk)
 \\ and BFS over it per shake.
+\\
+\\ The graph is a VALUE: a list of rows [F | Callees] threaded through the
+\\ footprint computation.  The cache file is plain text - one row per line,
+\\ space-separated names - parsed with string primitives.  It must NOT go
+\\ through read-file: the Shen reader applies the currying transform to
+\\ paren applications (and turns bracket lists into cons ASTs), silently
+\\ corrupting any row whose head's declared arity differs from its length.
 
 (define kernel-code
-  -> (let Code  (mapcan (fn read-file) (value *kernel*))
-          Graph (ensure-call-graph Code)
-          Code))
+  -> (mapcan (fn read-file) (value *kernel*)))
 
-(define ensure-call-graph
-  _ -> cached  where (bound? *kernel-fns*)
+(define call-graph
   Code -> (trap-error (load-call-graph) (/. E (build-call-graph Code))))
 
 (define load-call-graph
-  -> (let Rows    (read-file (value *callgraph-cache*))
-          Check   (if (empty? Rows) (error "empty call graph cache~%") loaded)
-          Install (ygg.mapc (/. Row (put (hd Row) calls (tl Row))) Rows)
-          (set *kernel-fns* (map (fn hd) Rows))))
+  -> (let Bytes (read-file-as-bytelist (value *callgraph-cache*))
+          Rows  (parse-graph Bytes "" [] [])
+          (if (empty? Rows) (error "empty call graph cache~%") Rows)))
+
+\\ parse-graph Bytes Token Row Rows: accumulate chars into Token, tokens
+\\ into Row, rows into Rows.  Walks the bytelist (O(n)); recursing over a
+\\ string with @s patterns would copy the tail each step (O(n^2)).
+(define parse-graph
+  [] Token Row Rows -> (reverse (close-row Token Row Rows))
+  [10 | Bs] Token Row Rows -> (parse-graph Bs "" [] (close-row Token Row Rows))
+  [13 | Bs] Token Row Rows -> (parse-graph Bs Token Row Rows)
+  [32 | Bs] Token Row Rows -> (parse-graph Bs "" (close-token Token Row) Rows)
+  [B | Bs] Token Row Rows -> (parse-graph Bs (cn Token (n->string B)) Row Rows))
+
+(define close-token
+  "" Row -> Row
+  Token Row -> [(intern Token) | Row])
+
+(define close-row
+  Token Row Rows -> (let Full (close-token Token Row)
+                         (if (empty? Full) Rows [(reverse Full) | Rows])))
 
 (define build-call-graph
   Code -> (let Fs    (defun-names Code)
-               SetFs (set *kernel-fns* Fs)
                Mark  (ygg.mapc (/. F (put F defp true)) Fs)
-               Edges (ygg.mapc (fn graph-defun) Code)
-               Save  (save-call-graph)
-               (value *kernel-fns*)))
+               Graph (graph-rows Code)
+               Save  (save-call-graph Graph)
+               Graph))
 
 (define defun-names
   [] -> []
   [[defun F | _] | Code] -> [F | (defun-names Code)]
   [_ | Code] -> (defun-names Code))
 
-(define graph-defun
-  [defun F _ Body] -> (put F calls (called-fns Body))
-  _ -> not-a-defun)
+(define graph-rows
+  [] -> []
+  [[defun F _ Body] | Code] -> [[F | (called-fns Body)] | (graph-rows Code)]
+  [_ | Code] -> (graph-rows Code))
 
 (define called-fns
   [X | Y] -> (union (called-fns X) (called-fns Y))
   F -> [F]   where (and (symbol? F) (kernel-defun? F))
   _ -> [])
 
+\\ defp is a build-time-only membership test: called-fns visits every
+\\ symbol leaf of ~700K of KL, where (element? F Fs) over 1129 names
+\\ would cost ~45M comparisons.  Never consulted per-shake.
 (define kernel-defun?
   F -> (trap-error (get F defp) (/. E false)))
 
-(define calls-of
-  F -> (trap-error (get F calls) (/. E [])))
-
-\\ Rows are written in KL paren syntax via pr-kl: read-file parses (a b c)
-\\ as a plain list, whereas bracket syntax [a b c] would read back as an
-\\ unevaluated (cons a (cons b ...)) AST.
 (define save-call-graph
-  -> (let Sink  (open (value *callgraph-cache*) out)
-          Write (ygg.mapc (/. F (pr-kl-line [F | (calls-of F)] Sink))
-                          (value *kernel-fns*))
-          Close (close Sink)
-          saved))
+  Graph -> (let Sink  (open (value *callgraph-cache*) out)
+                Write (ygg.mapc (/. Row (pr-graph-row Row Sink)) Graph)
+                Close (close Sink)
+                saved))
+
+(define pr-graph-row
+  [F | Calls] Sink -> (do (pr (str F) Sink)
+                          (ygg.mapc (/. C (pr (cn " " (str C)) Sink)) Calls)
+                          (pr (n->string 10) Sink)))
 
 \\ ============================ footprint =================================
+\\ Pure worklist reachability: the visited set is the accumulator itself.
+\\ Seeds that are not kernel functions fall through row-calls to [].
 
 (define footprint
-  Seeds -> (let Clear (ygg.mapc (/. F (put F seen false)) (value *kernel-fns*))
-                (bfs Seeds [])))
+  Seeds Graph -> (reach Seeds [] Graph))
 
-(define bfs
-  [] Acc -> Acc
-  [F | Fs] Acc -> (bfs Fs Acc)  where (seen? F)
-  [F | Fs] Acc -> (let Mark (put F seen true)
-                       (bfs (append (calls-of F) Fs) [F | Acc])))
+(define reach
+  [] Seen _ -> Seen
+  [F | Fs] Seen Graph -> (reach Fs Seen Graph)    where (element? F Seen)
+  [F | Fs] Seen Graph -> (reach (append (row-calls F Graph) Fs)
+                                [F | Seen] Graph))
 
-(define seen?
-  F -> (trap-error (get F seen) (/. E (do (put F seen true) false))))
+(define row-calls
+  F [[F | Calls] | _] -> Calls
+  F [_ | Rows] -> (row-calls F Rows)
+  _ [] -> [])
 
 (define function-calls
   [X | Y] -> (union (function-calls X) (function-calls Y))
