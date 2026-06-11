@@ -109,3 +109,4 @@ driver compiles each module to an object file and links a real
 executable via `c:build-program`, with boot replayed at program startup.
 
 [shen-cl]: https://github.com/Shen-Language/shen-cl
+[showboat]: https://github.com/simonw/showboat
