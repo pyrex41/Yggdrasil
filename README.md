@@ -16,6 +16,10 @@ program can actually reach, emits just that slice as KLambda, and hands the
 result to a per-target builder that compiles it with the target port's own
 KL compiler.
 
+**See it run:** [`DEMO.md`](DEMO.md) is an executable demo (built with
+[showboat]) that shakes one program and produces a running artifact on all
+four targets; `showboat verify DEMO.md` re-executes every step.
+
 ## Architecture
 
 **Stage 1 — shake** (this repo, runs on any certified Shen; developed
