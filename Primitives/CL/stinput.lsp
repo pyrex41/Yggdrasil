@@ -1,0 +1,2 @@
+(SETQ *stinput* *STANDARD-INPUT*)
+      

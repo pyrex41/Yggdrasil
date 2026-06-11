@@ -1,0 +1,6 @@
+(DEFUN prolog-memory (N)
+   (LET* ( (Vector (MAKE-ARRAY (LIST N) :INITIAL-ELEMENT 'shen.fail!)) 
+           (PrintNamed (SETF (SVREF Vector 0) 'shen.print-prolog-vector))
+           (Ticketed (SETF (SVREF Vector 1) 2)) 
+           (Assign (SETQ shen.*prolog-vector* Vector)))
+         N))

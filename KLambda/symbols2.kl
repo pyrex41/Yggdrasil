@@ -1,0 +1,2 @@
+(defun newv () (gensym X))
+

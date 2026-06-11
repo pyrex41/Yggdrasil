@@ -1,0 +1,1 @@
+(SETQ *stoutput* *STANDARD-OUTPUT*)
