@@ -370,6 +370,9 @@
 (define pr-kl
   [] Sink -> (pr "()" Sink)
   [X | Xs] Sink -> (do (pr "(" Sink) (pr-kl X Sink) (pr-kl-body Xs Sink))
+  \\ The kernel writer renders anything = to (fail) as "..." (see
+  \\ shen.arg->str), which is unreadable KL; print the marker verbatim.
+  X Sink -> (pr "shen.fail!" Sink)  where (= X (fail))
   X Sink -> (pr (make-string "~S" X) Sink))
 
 (define pr-kl-body
