@@ -20,15 +20,20 @@ program can actually reach, emits just that slice as KLambda, and hands the
 result to a per-target builder that compiles it with the target port's own
 KL compiler.
 
+> **The shaker runs on [shen-cl] only.** Stage 1 is pure Shen, but it
+> compiles your program to KLambda with the host's `bootstrap` compiler,
+> and shen-cl is the only host verified to emit fully portable KL (see
+> the Gotchas section for what happens on other hosts). The five *output*
+> targets are unaffected — shake on shen-cl, deploy anywhere.
+
 **See it run:** [`DEMO.md`](DEMO.md) is an executable demo (built with
 [showboat]) that shakes one program and produces a running artifact on all
 five targets; `showboat verify DEMO.md` re-executes every step.
 
 ## Architecture
 
-**Stage 1 — shake** (this repo; pure Shen against the certified kernel
-API, with [shen-cl] as the reference host — see the host-portability
-gotcha below):
+**Stage 1 — shake** (this repo; **run on [shen-cl]** — see the
+host-portability gotcha):
 
 ```
 shen eval -q -l ratatoskr.shen -e '(ratatoskr.shake ["prog.shen"] "out")'
