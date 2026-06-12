@@ -1,25 +1,25 @@
-\\                            Yggdrasil 2.0 - stage 2 builder (Common Lisp / SBCL)
+\\                            Ratatoskr - stage 2 builder (Common Lisp / SBCL)
 \\
-\\ Run via the shen-cl binary from the Yggdrasil directory, after loading
-\\ yggdrasil.shen (for the ygg.* list helpers):
+\\ Run via the shen-cl binary from the Ratatoskr directory, after loading
+\\ ratatoskr.shen (for the rat.* list helpers):
 \\
-\\   shen eval -q -l yggdrasil.shen -l builders/lisp/build.shen \
+\\   shen eval -q -l ratatoskr.shen -l builders/lisp/build.shen \
 \\        -e '(lsp.build "out" "/abs/path/to/exe")'
 \\
 \\ build.sh wraps this and then runs sbcl on DIR/driver.lsp.
 \\
-\\ Reads DIR/yggdrasil.manifest - the sexp manifest, because read-file
+\\ Reads DIR/ratatoskr.manifest - the sexp manifest, because read-file
 \\ parses its paren rows directly into plain lists (the .txt manifest would
 \\ need string parsing).  Then:
 \\
 \\   - compiles DIR/kernel.kl with shen-cl.kl->lisp -> DIR/kernel.lsp
 \\   - compiles each user .kl -> DIR/<name>.lsp; toplevel non-defun forms
-\\     are wrapped, in source order, into (DEFUN |yggdrasil.toplevel-<name>| () ...)
+\\     are wrapped, in source order, into (DEFUN |ratatoskr.toplevel-<name>| () ...)
 \\     which the driver's saved toplevel runs after (shen.initialise)
 \\   - copies the shen-cl runtime sources (package.lsp primitives.lsp
 \\     native.lsp shen-utils.lsp overwrite.lsp) and the static driver.lsp
 \\     into DIR, so DIR is self-contained
-\\   - writes DIR/yggdrasil.config.lsp telling the driver which user modules
+\\   - writes DIR/ratatoskr.config.lsp telling the driver which user modules
 \\     to load and where save-lisp-and-die should write the executable
 \\
 \\ Strategy note: this reuses shen-cl's own runtime .lsp files rather than
@@ -136,7 +136,7 @@
 (define lsp.write-lsp
   File Strings -> (let Sink  (open File out)
                        Top   (pr (make-string "(in-package :shen)~%~%") Sink)
-                       Write (ygg.mapc (/. S (pr (make-string "~A~%~%" S) Sink))
+                       Write (rat.mapc (/. S (pr (make-string "~A~%~%" S) Sink))
                                        Strings)
                        Close (close Sink)
                        File))
@@ -154,12 +154,12 @@
 (define lsp.compile-user
   Dir File -> (let Name   (lsp.strip-kl File)
                    Forms  (read-file (@s Dir "/" File))
-                   Defuns (ygg.filter (/. F (lsp.defun? F)) Forms)
-                   Tops   (ygg.filter (/. F (not (lsp.defun? F))) Forms)
+                   Defuns (rat.filter (/. F (lsp.defun? F)) Forms)
+                   Tops   (rat.filter (/. F (not (lsp.defun? F))) Forms)
                    CDefs  (map (/. F (shen-cl.kl->lisp F)) Defuns)
                    CTops  (map (/. F (shen-cl.kl->lisp F)) Tops)
                    Main   [(shen-cl.cl defun)
-                           (intern (@s "yggdrasil.toplevel-" Name)) []
+                           (intern (@s "ratatoskr.toplevel-" Name)) []
                            | CTops]
                    Strs   (map (/. L (lsp.sexp->string L))
                                (append CDefs [Main]))
@@ -169,29 +169,29 @@
 \\ ====================== staging the build dir ============================
 
 (define lsp.copy-runtime
-  Dir -> (do (ygg.mapc (/. F (ygg.copy-file (@s (value lsp.*shen-cl*) "src/" F)
+  Dir -> (do (rat.mapc (/. F (rat.copy-file (@s (value lsp.*shen-cl*) "src/" F)
                                             (@s Dir "/" F)))
                        (value lsp.*runtime-files*))
-             (ygg.copy-file (value lsp.*driver*) (@s Dir "/driver.lsp"))))
+             (rat.copy-file (value lsp.*driver*) (@s Dir "/driver.lsp"))))
 
 (define lsp.write-config
   Dir Names Exe ->
-    (lsp.write-lsp (@s Dir "/yggdrasil.config.lsp")
+    (lsp.write-lsp (@s Dir "/ratatoskr.config.lsp")
       (map (/. L (lsp.sexp->string L))
-           [[(shen-cl.cl defparameter) (shen-cl.cl yggdrasil-user-names)
+           [[(shen-cl.cl defparameter) (shen-cl.cl ratatoskr-user-names)
              [(shen-cl.cl quote) Names]]
-            [(shen-cl.cl defparameter) (shen-cl.cl yggdrasil-exe) Exe]])))
+            [(shen-cl.cl defparameter) (shen-cl.cl ratatoskr-exe) Exe]])))
 
 (define lsp.warn-needs-eval
-  [true] -> (output "yggdrasil/lisp: note: manifest says needs-eval=true.  The KL->Lisp compiler is not packaged, so a runtime call to eval-kl would fail; the fixtures never call it.~%")
+  [true] -> (output "ratatoskr/lisp: note: manifest says needs-eval=true.  The KL->Lisp compiler is not packaged, so a runtime call to eval-kl would fail; the fixtures never call it.~%")
   _ -> done)
 
 \\ ============================ entry point ================================
 
 (define lsp.build
-  Dir Exe -> (let Manifest (read-file (@s Dir "/yggdrasil.manifest"))
+  Dir Exe -> (let Manifest (read-file (@s Dir "/ratatoskr.manifest"))
                   Users    (lsp.manifest-get "user" Manifest)
-                  Reg      (ygg.mapc (/. F (lsp.register-arities
+                  Reg      (rat.mapc (/. F (lsp.register-arities
                                             (read-file (@s Dir "/" F))))
                                      Users)
                   Kernel   (lsp.compile-kernel Dir)
@@ -199,5 +199,5 @@
                   Copy     (lsp.copy-runtime Dir)
                   Config   (lsp.write-config Dir Names Exe)
                   Warn     (lsp.warn-needs-eval (lsp.manifest-get "needs-eval" Manifest))
-                  (output "yggdrasil/lisp: staged ~A (users: ~A) -> ~A~%"
+                  (output "ratatoskr/lisp: staged ~A (users: ~A) -> ~A~%"
                           Dir Names Exe)))

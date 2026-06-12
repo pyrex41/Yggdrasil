@@ -1,11 +1,11 @@
-# Yggdrasil: one Shen program, four native targets
+# Ratatoskr: one Shen program, four native targets
 
 *2026-06-11T22:53:26Z by Showboat 0.6.1*
 <!-- showboat-id: f13bb21e-fd4c-4bea-b91b-3c2b524ba3d8 -->
 
-[Yggdrasil](README.md) tree-shakes a [Shen](https://shenlanguage.org) program against the ShenOSKernel-41.2 and emits the minimal KLambda slice plus a manifest; per-target builders in the sibling port repos then compile that slice with each port's own KL compiler. This demo shakes one program and produces a running artifact on **Common Lisp (SBCL), LuaJIT, Rust, and Go**.
+[Ratatoskr](README.md) tree-shakes a [Shen](https://shenlanguage.org) program against the ShenOSKernel-41.2 and emits the minimal KLambda slice plus a manifest; per-target builders in the sibling port repos then compile that slice with each port's own KL compiler. This demo shakes one program and produces a running artifact on **Common Lisp (SBCL), LuaJIT, Rust, and Go**.
 
-Assumptions: sibling checkouts `../shen-cl` (with a built `bin/sbcl/shen`), `../shen-lua`, `../shen-rust`, `../shen-go`, and `sbcl`, `luajit`, `cargo`, `go` on PATH. Run from the Yggdrasil repo root.
+Assumptions: sibling checkouts `../shen-cl` (with a built `bin/sbcl/shen`), `../shen-lua`, `../shen-rust`, `../shen-go`, and `sbcl`, `luajit`, `cargo`, `go` on PATH. Run from the Ratatoskr repo root.
 
 The program: `tests/fib.shen` —
 
@@ -25,22 +25,22 @@ cat tests/fib.shen
 
 ## Stage 1 — shake
 
-`yggdrasil.shake` computes the program's reachable slice of the kernel's 1129 functions. fib never evaluates Shen at runtime, so eval-stripping kicks in: the macro expander, typechecker, reader and `eval` all fall away, leaving ~100 kernel functions.
+`ratatoskr.shake` computes the program's reachable slice of the kernel's 1129 functions. fib never evaluates Shen at runtime, so eval-stripping kicks in: the macro expander, typechecker, reader and `eval` all fall away, leaving ~100 kernel functions.
 
 ```bash
-mkdir -p out-demo && ../shen-cl/bin/sbcl/shen eval -q -l yggdrasil.shen -e "(yggdrasil.shake [\"tests/fib.shen\"] \"out-demo\")" | tail -1 && ls out-demo
+rm -rf out-demo && mkdir -p out-demo && ../shen-cl/bin/sbcl/shen eval -q -l ratatoskr.shen -e "(ratatoskr.shake [\"tests/fib.shen\"] \"out-demo\")" | tail -1 && ls out-demo
 ```
 
 ```output
 done
 fib.kl
 kernel.kl
-yggdrasil.manifest
-yggdrasil.manifest.txt
+ratatoskr.manifest
+ratatoskr.manifest.txt
 ```
 
 ```bash
-grep -c "(defun" out-demo/kernel.kl && grep -E "manifest-version|kernel-version|user=|fn=|needs-eval" out-demo/yggdrasil.manifest.txt
+grep -c "(defun" out-demo/kernel.kl && grep -E "manifest-version|kernel-version|user=|fn=|needs-eval" out-demo/ratatoskr.manifest.txt
 ```
 
 ```output
@@ -71,7 +71,7 @@ fib 20 = 6765
 The shen-lua builder compiles the slice to Lua source and emits a single self-contained file (~640 KB) that needs only a `luajit` binary.
 
 ```bash
-luajit ../shen-lua/bin/yggdrasil-build.lua out-demo out-demo/fib.lua >/dev/null 2>&1 && luajit out-demo/fib.lua
+luajit ../shen-lua/bin/ratatoskr-build.lua out-demo out-demo/fib.lua >/dev/null 2>&1 && luajit out-demo/fib.lua
 ```
 
 ```output
@@ -83,7 +83,7 @@ fib 20 = 6765
 The shen-rust builder AOT-compiles every shaken defun to Rust via `klcompile` and scaffolds a standalone Cargo project (path-dependency on the `shen-rust` crate). `cargo build --release` links a ~9 MB native binary.
 
 ```bash
-(cd ../shen-rust && cargo run -q --release -p yggdrasil-build -- ../Yggdrasil/out-demo ../Yggdrasil/out-demo/fib-rust) >/dev/null 2>&1 && (cd out-demo/fib-rust && cargo build --release -q >/dev/null 2>&1) && ./out-demo/fib-rust/target/release/fib-rust
+(cd ../shen-rust && cargo run -q --release -p ratatoskr-build -- ../ratatoskr/out-demo ../ratatoskr/out-demo/fib-rust) >/dev/null 2>&1 && (cd out-demo/fib-rust && cargo build --release -q >/dev/null 2>&1) && ./out-demo/fib-rust/target/release/fib-rust
 ```
 
 ```output
@@ -95,7 +95,7 @@ fib 20 = 6765
 The shen-go builder translates the slice through shen-go's bytecode-IR→Go codegen into a plain Go module — no plugins — which `go build` turns into a ~4.5 MB static binary.
 
 ```bash
-(cd ../shen-go && go build -o /tmp/yggdrasil-build-demo ./cmd/yggdrasil-build) && /tmp/yggdrasil-build-demo -shen-go ../shen-go out-demo out-demo/fib-go >/dev/null 2>&1 && (cd out-demo/fib-go && go build -o ../fib-go-bin .) && ./out-demo/fib-go-bin
+(cd ../shen-go && go build -o /tmp/ratatoskr-build-demo ./cmd/ratatoskr-build) && /tmp/ratatoskr-build-demo -shen-go ../shen-go out-demo out-demo/fib-go >/dev/null 2>&1 && (cd out-demo/fib-go && go build -o ../fib-go-bin .) && ./out-demo/fib-go-bin
 ```
 
 ```output

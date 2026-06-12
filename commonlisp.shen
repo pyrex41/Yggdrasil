@@ -1,7 +1,7 @@
 \\                                    Package for Generating Common Lisp
 \\                                    (c) Mark Tarver 2023, 3 clause BSD
 
-\\ No package wrapper (41.1 has no stlib package); see yggdrasil.shen.
+\\ No package wrapper (41.1 has no stlib package); see ratatoskr.shen.
 
 (put "lsp" compiler (fn lisp-compiler))
 

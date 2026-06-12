@@ -1,13 +1,13 @@
 # Design note: seed-set reachability, not Warshall closure
 
-**Status**: decided (Yggdrasil 2.0, June 2026)
-**Code**: `yggdrasil.shen` — `call-graph`, `footprint`, `reach`
+**Status**: decided (Ratatoskr, June 2026)
+**Code**: `ratatoskr.shen` — `call-graph`, `footprint`, `reach`
 **Decision**: compute the shaken footprint with a worklist traversal (BFS/DFS)
 over a cached direct call graph. Do **not** compute the transitive closure
 (Warshall), and do **not** add an external compute step (e.g. Julia) to speed
 a closure up — the closure itself is the wrong tool, not its implementation.
 
-## The problem Yggdrasil actually solves
+## The problem Ratatoskr actually solves
 
 Tree-shaking is: given the kernel call graph and a seed set
 (`shen.initialise` plus every function the user program calls), find all
@@ -17,7 +17,7 @@ That is **single-source (multi-seed) reachability** — one row of the
 reachability relation, unioned over a handful of seeds. It is not all-pairs
 reachability.
 
-## Why the original Yggdrasil used Warshall, and why 2.0 dropped it
+## Why the original Yggdrasil used Warshall, and why Ratatoskr dropped it
 
 Tarver's original Yggdrasil computed the full transitive closure of the
 kernel call graph with Warshall's algorithm: Θ(N³) over every kernel symbol.
@@ -35,7 +35,7 @@ That was tolerable for the small kernels it targeted. Against ShenOSKernel
 Beyond the constant-factor pain, the closure computes ~1.27 million
 pairwise answers per shake and then throws away all but one row's worth.
 
-## What 2.0 does instead
+## What Ratatoskr does instead
 
 1. **Build the direct call graph once** (`build-call-graph`): for each
    `defun`, record which kernel-defined names appear in its body. This is
@@ -71,7 +71,7 @@ down to O(V³/w) ≈ 2.2 × 10⁷ word ops. Objections, in order of importance:
    work buys answers (reachability between arbitrary non-seed pairs) that
    no part of the pipeline consumes.
 2. **Portability is the product.** Stage 1's contract (see the header of
-   `yggdrasil.shen`) is that it runs on *any certified Shen*. Adding a
+   `ratatoskr.shen`) is that it runs on *any certified Shen*. Adding a
    Julia (or C, or anything) sidecar for graph math breaks the one
    property the tool exists to provide. There is no performance problem to
    justify it: per-shake reachability over 1,129 nodes is milliseconds in

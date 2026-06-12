@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Yggdrasil 2.0 - stage-2 Common Lisp builder.
+# Ratatoskr - stage-2 Common Lisp builder.
 #
 #   builders/lisp/build.sh <shaken-dir> <output-exe>
 #
-# <shaken-dir> is a directory produced by (yggdrasil.shake ...): kernel.kl,
-# user .kl files and yggdrasil.manifest.  Produces a self-contained native
+# <shaken-dir> is a directory produced by (ratatoskr.shake ...): kernel.kl,
+# user .kl files and ratatoskr.manifest.  Produces a self-contained native
 # executable at <output-exe>.
 #
 # Overridable environment:
@@ -21,8 +21,8 @@ if [ $# -ne 2 ]; then
     exit 2
 fi
 
-YGG_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SHEN_CL="${SHEN_CL:-$(cd "$YGG_ROOT/../shen-cl" && pwd)}"
+RAT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SHEN_CL="${SHEN_CL:-$(cd "$RAT_ROOT/../shen-cl" && pwd)}"
 SHEN_BIN="${SHEN_BIN:-$SHEN_CL/bin/sbcl/shen}"
 LISP_IMPL="${LISP_IMPL:-sbcl}"
 
@@ -39,9 +39,9 @@ case "$DIR" in /*) ;; *) DIR="$PWD/$DIR" ;; esac
 case "$EXE" in /*) ;; *) EXE="$PWD/$EXE" ;; esac
 
 # Stage: compile KL -> Lisp, copy the shen-cl runtime + driver into DIR.
-cd "$YGG_ROOT"
+cd "$RAT_ROOT"
 "$SHEN_BIN" eval -q \
-    -l yggdrasil.shen \
+    -l ratatoskr.shen \
     -l builders/lisp/build.shen \
     -e "(set lsp.*shen-cl* \"$SHEN_CL/\")" \
     -e "(lsp.build \"$DIR\" \"$EXE\")"
@@ -56,4 +56,4 @@ case "$LISP_IMPL" in
 esac
 
 rm -f "$DIR"/*.fasl "$DIR"/*.fas "$DIR"/*.lib "$DIR"/*.o
-echo "yggdrasil/lisp: built $EXE ($LISP_IMPL)"
+echo "ratatoskr/lisp: built $EXE ($LISP_IMPL)"

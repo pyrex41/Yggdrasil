@@ -17,5 +17,5 @@ Exceptions:
 Note that the ShenOSKernel releases are the community packaging of the
 kernel (Shen-Language/shen-sources) and differ deliberately from Mark
 Tarver's S-series distributions on shenlanguage.org (tracked at
-pyrex41/shen-s41.1); all Yggdrasil ports certify against the
+pyrex41/shen-s41.1); all Ratatoskr ports certify against the
 ShenOSKernel packaging.

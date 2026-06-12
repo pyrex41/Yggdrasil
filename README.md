@@ -1,16 +1,20 @@
-# Yggdrasil 2.0
+# Ratatoskr
 
-A tree-shaker for [Shen](https://shenlanguage.org) programs, retargeted to
-ShenOSKernel **41.2**. Based on Mark Tarver's Yggdrasil 1.0 (3-clause BSD).
+A tree-shaker for [Shen](https://shenlanguage.org) programs, targeting
+ShenOSKernel **41.2**. Descended from Mark Tarver's **Yggdrasil 1.0**
+(3-clause BSD) — in the myth, Ratatoskr is the squirrel that runs the
+trunk of Yggdrasil, carrying messages between crown and roots; here it
+walks the kernel call graph and carries a minimal slice of the tree to
+each target runtime.
 
 Dr. Tarver's original vision and description, *Using Yggdrasil to Generate
 Stand-alone Programs from Shen* (Shen Group, 2023), is preserved here as
-[`yggdrasil.pdf`](yggdrasil.pdf). The 1.0 distribution this repository
-started from is archived in [`archive/`](archive/) along with the
+[`yggdrasil.pdf`](yggdrasil.pdf). The Yggdrasil 1.0 distribution this
+repository started from is archived in [`archive/`](archive/) along with the
 [Wayback Machine capture](https://web.archive.org/web/20240430183437/https://www.shenlanguage.org/Download/Yggdrasil.zip)
 it was retrieved from.
 
-Yggdrasil turns a Shen program into a minimal, standalone artifact in a
+Ratatoskr turns a Shen program into a minimal, standalone artifact in a
 target language: it computes which of the kernel's 1129 functions the
 program can actually reach, emits just that slice as KLambda, and hands the
 result to a per-target builder that compiles it with the target port's own
@@ -26,7 +30,7 @@ four targets; `showboat verify DEMO.md` re-executes every step.
 against [shen-cl]):
 
 ```
-shen eval -q -l yggdrasil.shen -e '(yggdrasil.shake ["prog.shen"] "out")'
+shen eval -q -l ratatoskr.shen -e '(ratatoskr.shake ["prog.shen"] "out")'
 ```
 
 writes to `out/`:
@@ -35,8 +39,8 @@ writes to `out/`:
 |---|---|
 | `kernel.kl` | shaken kernel defuns, load order preserved |
 | `<prog>.kl` | the user program compiled to KLambda |
-| `yggdrasil.manifest.txt` | line-oriented contract (`key=value`) |
-| `yggdrasil.manifest` | same, as s-expressions |
+| `ratatoskr.manifest.txt` | line-oriented contract (`key=value`) |
+| `ratatoskr.manifest` | same, as s-expressions |
 
 **Stage 2 — build** (one builder per target port, living in that port's
 repo):
@@ -44,9 +48,9 @@ repo):
 | target | builder | output (eval-stripped fib) |
 |---|---|---|
 | Common Lisp | `builders/lisp/build.sh <dir> <exe>` (this repo; `LISP_IMPL=sbcl\|clisp\|ecl`) | saved image (SBCL ~36 MB, CLISP ~7.8 MB) or compiled binary (ECL ~620 KB + libecl) |
-| LuaJIT | `shen-lua/bin/yggdrasil-build.lua <dir> <out.lua>` | self-contained .lua (~640 KB, ~25 ms startup) |
-| Go | `shen-go/cmd/yggdrasil-build <dir> <outdir>` then `go build` | static binary (~4.5 MB, ≤10 ms startup, cross-compiles linux/windows) |
-| Rust | `shen-rust/crates/yggdrasil-build <dir> <outdir>` then `cargo build --release` | static binary (~9 MB, ~40 ms startup) |
+| LuaJIT | `shen-lua/bin/ratatoskr-build.lua <dir> <out.lua>` | self-contained .lua (~640 KB, ~25 ms startup) |
+| Go | `shen-go/cmd/ratatoskr-build <dir> <outdir>` then `go build` | static binary (~4.5 MB, ≤10 ms startup, cross-compiles linux/windows) |
+| Rust | `shen-rust/crates/ratatoskr-build <dir> <outdir>` then `cargo build --release` | static binary (~9 MB, ~40 ms startup) |
 
 **Builder contract**: load `kernel.kl`'s defuns, call `(shen.initialise)`
 (41.2 consolidates all global initialisation there), then run each user
@@ -86,7 +90,7 @@ symbol named `eval` keeps the machinery.
   parsed as plain text.
 - 41.2's stlib is lazily materialised: `mapc`, `filter`,
   `remove-duplicates`, `copy-file` don't exist in port runtimes.
-  `yggdrasil.shen` carries its own `ygg.*` versions.
+  `ratatoskr.shen` carries its own `rat.*` versions.
 - Compiled KL carries explicit property-table arguments — e.g. the
   external-symbols registration is a 5-element `put` node, not 4.
 
@@ -107,6 +111,14 @@ on restart under CLISP, so the image toplevel rebinds
 `*stoutput*`/`*stinput*` at startup. ECL cannot dump images at all — the
 driver compiles each module to an object file and links a real
 executable via `c:build-program`, with boot replayed at program startup.
+
+## Name and lineage
+
+This project was previously published as "Yggdrasil 2.0". It was renamed
+to Ratatoskr to leave the Yggdrasil name to Dr. Tarver's original work,
+of which this is an independent continuation — same idea, retargeted and
+rebuilt for the 41.2 kernel. If you need to relate the two: Ratatoskr ≈
+Yggdrasil 2.0.
 
 [shen-cl]: https://github.com/Shen-Language/shen-cl
 [showboat]: https://github.com/simonw/showboat
