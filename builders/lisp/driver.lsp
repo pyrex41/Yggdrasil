@@ -8,6 +8,7 @@
 ;;; Expects alongside this file (staged by builders/lisp/build.shen):
 ;;;     package.lsp primitives.lsp native.lsp shen-utils.lsp overwrite.lsp
 ;;;     kernel.lsp <user>.lsp ratatoskr.config.lsp
+;;;     compiler.lsp (eval-capable builds only: manifest needs-eval=true)
 ;;;
 ;;; Mirrors the minimal subset of shen-cl's boot.lsp:
 ;;;     package -> primitives -> native -> shen-utils -> kernel ->
@@ -128,6 +129,12 @@
   (ratatoskr-import "primitives.lsp")
   (ratatoskr-import "native.lsp")
   (ratatoskr-import "shen-utils.lsp")
+  ;; Eval-capable programs ship shen-cl's KL->Lisp compiler so the eval-kl
+  ;; primitive works at runtime; shen-cl's boot loads it in this position.
+  ;; initialise-compiler only sets the compiler's two flag globals.
+  (when ratatoskr-needs-eval
+    (ratatoskr-import "compiler.lsp")
+    (|shen-cl.initialise-compiler|))
   (ratatoskr-import "kernel.lsp")
   (ratatoskr-load-overwrite "overwrite.lsp")
   (ratatoskr-install-stream-fallbacks)
@@ -155,6 +162,19 @@
                    :init-function #'ratatoskr-toplevel)
   (ext:exit 0))
 
+;; ECL compiles intra-file calls as direct C calls, so a kernel function
+;; redefined by overwrite.lsp would keep its original definition at call
+;; sites inside the file that defines it (e.g. shen.initialise's call to
+;; shen.dict must reach the native hash-table dict, not the kernel's
+;; absvector one).  Proclaim every function overwrite.lsp defines
+;; NOTINLINE before compiling the modules, exactly as shen-cl's boot does.
+#+ecl
+(with-open-file (in "overwrite.lsp")
+  (loop for form = (read in nil :eof)
+        until (eq form :eof)
+        when (and (consp form) (eq (car form) 'defun))
+        do (proclaim (list 'notinline (cadr form)))))
+
 ;; ECL: compile every module to an object file and link an executable.
 ;; The epilogue replays the boot order at startup: overwrite patches
 ;; (interpreted form-by-form for the skip-on-missing-target behavior),
@@ -165,7 +185,9 @@
 ;; overwrite source text is embedded as a literal.
 #+ecl
 (let* ((modules (append '("package" "ratatoskr.config"
-                          "primitives" "native" "shen-utils" "kernel")
+                          "primitives" "native" "shen-utils")
+                        (when ratatoskr-needs-eval '("compiler"))
+                        '("kernel")
                         ratatoskr-user-names))
        (overwrite-text
         (with-open-file (in "overwrite.lsp")
@@ -177,6 +199,7 @@
        (epilogue
         `(progn
            (in-package :shen)
+           ,@(when ratatoskr-needs-eval '((|shen-cl.initialise-compiler|)))
            (with-input-from-string (in ,overwrite-text)
              (loop with eof = (list :eof)
                    for form = (read in nil eof)

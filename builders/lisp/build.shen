@@ -18,7 +18,9 @@
 \\     which the driver's saved toplevel runs after (shen.initialise)
 \\   - copies the shen-cl runtime sources (package.lsp primitives.lsp
 \\     native.lsp shen-utils.lsp overwrite.lsp) and the static driver.lsp
-\\     into DIR, so DIR is self-contained
+\\     into DIR, so DIR is self-contained; eval-capable programs
+\\     (needs-eval=true) additionally get shen-cl's precompiled KL->Lisp
+\\     compiler (compiled/compiler.lsp) so eval-kl works at runtime
 \\   - writes DIR/ratatoskr.config.lsp telling the driver which user modules
 \\     to load and where save-lisp-and-die should write the executable
 \\
@@ -175,16 +177,25 @@
              (rat.copy-file (value lsp.*driver*) (@s Dir "/driver.lsp"))))
 
 (define lsp.write-config
-  Dir Names Exe ->
+  Dir Names Exe NeedsEval ->
     (lsp.write-lsp (@s Dir "/ratatoskr.config.lsp")
       (map (/. L (lsp.sexp->string L))
            [[(shen-cl.cl defparameter) (shen-cl.cl ratatoskr-user-names)
              [(shen-cl.cl quote) Names]]
-            [(shen-cl.cl defparameter) (shen-cl.cl ratatoskr-exe) Exe]])))
+            [(shen-cl.cl defparameter) (shen-cl.cl ratatoskr-exe) Exe]
+            [(shen-cl.cl defparameter) (shen-cl.cl ratatoskr-needs-eval)
+             (if NeedsEval (shen-cl.cl t) [])]])))
 
-(define lsp.warn-needs-eval
-  [true] -> (output "ratatoskr/lisp: note: manifest says needs-eval=true.  The KL->Lisp compiler is not packaged, so a runtime call to eval-kl would fail; the fixtures never call it.~%")
-  _ -> done)
+\\ Eval-capable programs (manifest needs-eval=true) need eval-kl at runtime,
+\\ and shen-cl's eval-kl primitive compiles its argument with
+\\ shen-cl.kl->lisp.  Stage shen-cl's precompiled compiler
+\\ (compiled/compiler.lsp - generated kl->lisp output, so it is
+\\ implementation-portable) and the driver loads it in boot order.
+(define lsp.stage-compiler
+  Dir [true] -> (do (rat.copy-file (@s (value lsp.*shen-cl*) "compiled/compiler.lsp")
+                                   (@s Dir "/compiler.lsp"))
+                    true)
+  _ _ -> false)
 
 \\ ============================ entry point ================================
 
@@ -197,7 +208,7 @@
                   Kernel   (lsp.compile-kernel Dir)
                   Names    (map (/. F (lsp.compile-user Dir F)) Users)
                   Copy     (lsp.copy-runtime Dir)
-                  Config   (lsp.write-config Dir Names Exe)
-                  Warn     (lsp.warn-needs-eval (lsp.manifest-get "needs-eval" Manifest))
-                  (output "ratatoskr/lisp: staged ~A (users: ~A) -> ~A~%"
-                          Dir Names Exe)))
+                  Eval     (lsp.stage-compiler Dir (lsp.manifest-get "needs-eval" Manifest))
+                  Config   (lsp.write-config Dir Names Exe Eval)
+                  (output "ratatoskr/lisp: staged ~A (users: ~A, eval: ~A) -> ~A~%"
+                          Dir Names Eval Exe)))

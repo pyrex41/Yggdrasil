@@ -82,6 +82,14 @@ manifest reports `needs-eval=false`; eval-capable programs keep the full
 machinery (~561 defuns). Detection over-approximates safely — a stray
 symbol named `eval` keeps the machinery.
 
+The eval-capable path is exercised end-to-end by `tests/metaeval.shen`
+(builds expressions as data — a list, a runtime `define`, a string — and
+evaluates them) on all five targets. Each port embeds or links its own
+KL compiler for runtime `eval-kl`: the Lisp builder stages shen-cl's
+precompiled `compiled/compiler.lsp` when the manifest says
+`needs-eval=true`, and ShenScript requires `--linked` (self-contained
+mode refuses eval-capable manifests).
+
 ## Gotchas (hard-won)
 
 - Shen's `read-file` is **not a data reader**: it applies the currying
@@ -97,8 +105,11 @@ symbol named `eval` keeps the machinery.
 
 ## Tests
 
-`tests/{hello,fib,prolog}.shen` are the three fixtures; expected outputs
-`hello from shaken shen`, `fib 20 = 6765`, `mary likes chocolate: true`.
+`tests/{hello,fib,prolog,metaeval}.shen` are the four fixtures; expected
+outputs `hello from shaken shen`, `fib 20 = 6765`,
+`mary likes chocolate: true`, and three lines of `eval ...: 42`
+(metaeval is the eval-capable fixture: `needs-eval=true`, ~568 kernel
+defuns).
 Every stage-1 change should be verified through at least one stage-2
 builder (the Lua one is fastest).
 
