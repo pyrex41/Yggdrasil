@@ -71,11 +71,15 @@ down to O(V³/w) ≈ 2.2 × 10⁷ word ops. Objections, in order of importance:
    work buys answers (reachability between arbitrary non-seed pairs) that
    no part of the pipeline consumes.
 2. **Portability is the product.** Stage 1's contract (see the header of
-   `ratatoskr.shen`) is that it runs on *any certified Shen*. Adding a
-   Julia (or C, or anything) sidecar for graph math breaks the one
-   property the tool exists to provide. There is no performance problem to
-   justify it: per-shake reachability over 1,129 nodes is milliseconds in
-   pure Shen.
+   `ratatoskr.shen`) is that it is pure Shen against the certified kernel
+   API — no external toolchain. (Host portability in practice is narrower
+   than "any certified Shen" because the user KL inherits the host's
+   `bootstrap` compiler; see the README gotcha. The shake *logic* is
+   portable: shen-lua as host reproduces `kernel.kl` byte-for-byte.)
+   Adding a Julia (or C, or anything) sidecar for graph math breaks the
+   one property the tool exists to provide. There is no performance
+   problem to justify it: per-shake reachability over 1,129 nodes is
+   milliseconds in pure Shen.
 3. **The actual bottleneck was never the traversal.** Profiling during the
    41.1 retarget showed the cost is in *building* the graph (one walk of
    700 KB of KL — solved by the disk cache and the `defp` property-list

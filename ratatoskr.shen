@@ -3,10 +3,12 @@
 \\
 \\ Tree-shaker for Shen programs, updated for ShenOSKernel 41.2.
 \\
-\\ Stage 1 (this file, runs on any certified Shen): shake a program against
-\\ the 41.2 kernel and emit minimal KL + a manifest.  Stage 2 (per target,
-\\ lives in each port repo): compile the shaken KL with the port's own
-\\ KL->native compiler.
+\\ Stage 1 (this file): shake a program against the 41.2 kernel and emit
+\\ minimal KL + a manifest.  Pure Shen against the certified kernel API;
+\\ run it on shen-cl - the user KL comes from the host's bootstrap
+\\ compiler, and other hosts may emit port-internal hooks (see README,
+\\ host-portability gotcha).  Stage 2 (per target, lives in each port
+\\ repo): compile the shaken KL with the port's own KL->native compiler.
 \\
 \\ (ratatoskr.shake ["prog.shen"] "out") writes to out/:
 \\    kernel.kl                shaken kernel defuns, in load order

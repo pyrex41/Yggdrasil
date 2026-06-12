@@ -26,8 +26,9 @@ five targets; `showboat verify DEMO.md` re-executes every step.
 
 ## Architecture
 
-**Stage 1 — shake** (this repo, runs on any certified Shen; developed
-against [shen-cl]):
+**Stage 1 — shake** (this repo; pure Shen against the certified kernel
+API, with [shen-cl] as the reference host — see the host-portability
+gotcha below):
 
 ```
 shen eval -q -l ratatoskr.shen -e '(ratatoskr.shake ["prog.shen"] "out")'
@@ -102,6 +103,18 @@ mode refuses eval-capable manifests).
   `ratatoskr.shen` carries its own `rat.*` versions.
 - Compiled KL carries explicit property-table arguments — e.g. the
   external-symbols registration is a 5-element `put` node, not 4.
+- **Stage 1 host portability is narrower than "any certified Shen"**
+  (measured 2026-06-12): the shake logic itself is portable — shen-lua
+  as host produces a byte-identical `kernel.kl` and manifest — but the
+  user program's KL comes from the host port's `bootstrap` (shen→KL)
+  compiler, which may not emit self-contained KL. shen-lua compiles
+  `prolog?` queries to port-internal registry hooks
+  (`shen.lua-run-query*`) that no builder can load, so prolog-using
+  programs shake correctly only on shen-cl; plain programs (fib) shake
+  identically on both (modulo gensym numbering). shen-go's stock CLI
+  has no `-l`/`-e` launcher, and ShenScript's eval path did not finish
+  the kernel walk in 50+ minutes (shen-cl: 0.03 s). **Use shen-cl to
+  shake.**
 
 ## Tests
 
