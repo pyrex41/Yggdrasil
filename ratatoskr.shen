@@ -238,9 +238,16 @@
 \\ ============================ footprint =================================
 \\ Pure worklist reachability: the visited set is the accumulator itself.
 \\ Seeds that are not kernel functions fall through row-calls to [].
+\\ (set *use-warshall* true) routes footprint through the optional Warshall
+\\ closure below instead - identical result, kept for homage to the
+\\ original; see the Warshall section for the cost caveat.
+
+(set *use-warshall* false)
 
 (define footprint
-  Seeds Graph -> (reach Seeds [] Graph))
+  Seeds Graph -> (if (value *use-warshall*)
+                     (warshall-footprint Seeds Graph)
+                     (reach Seeds [] Graph)))
 
 (define reach
   [] Seen _ -> Seen
@@ -252,6 +259,112 @@
   F [[F | Calls] | _] -> Calls
   F [_ | Rows] -> (row-calls F Rows)
   _ [] -> [])
+
+\\ ===================== Warshall closure (homage, optional) ==============
+\\ Tarver's original Yggdrasil derived the footprint from the FULL transitive
+\\ closure of the call graph, built with an iterative Warshall - the part he
+\\ was proudest of.  His version leaned on an array/:=/for DSL that never
+\\ shipped, so it could not actually run; this is the same algorithm,
+\\ finished against primitives that exist (Shen vectors).  It is preserved
+\\ for coherence with the original and as a differential oracle for the
+\\ worklist reach (both must yield the same footprint).
+\\
+\\ Cost is the reason it is not the default: O(V^3) over a V*V boolean
+\\ matrix.  Fine on the small graphs of the test fixtures; impractical on the
+\\ full 1129-node kernel (see docs/reachability.md).  Enable per run with
+\\ (set *use-warshall* true).
+\\
+\\ One correction over the 1.0 original: each seed is unioned into its own
+\\ reachable set (seed-row prepends S), so a directly-called LEAF function is
+\\ retained.  The original irreflexive closure gave a leaf no row, and
+\\ footprint-by-lookup then dropped it - a latent bug in 1.0.  Pivot K is the
+\\ outermost loop, the invariant Warshall correctness depends on.
+
+(define warshall-footprint
+  Seeds Graph -> (let Fs    (map (fn row-head) Graph)
+                      N     (length Fs)
+                      Index (index-rows Fs 1)
+                      M     (zero-matrix N)
+                      Fill  (populate-matrix Graph M)
+                      Close (warshall-iterate M N 1)
+                      (collect-reachable Seeds Fs M N)))
+
+(define row-head
+  [F | _] -> F)
+
+\\ Map each node name to its 1-based matrix index on a property list (the
+\\ same trick kernel-defun? uses), so populate/collect are O(1) lookups.
+(define index-rows
+  [] _ -> done
+  [F | Fs] I -> (do (put F rat.warshall-ix I) (index-rows Fs (+ I 1))))
+
+(define node-index
+  F -> (trap-error (get F rat.warshall-ix) (/. E 0)))
+
+\\ N*N boolean matrix as a vector of N row-vectors, every cell false (Shen
+\\ vector slots start unpopulated, which is not a boolean - so fill them).
+(define zero-matrix
+  N -> (fill-row-vectors (vector N) 1 N))
+
+(define fill-row-vectors
+  M I N -> M  where (> I N)
+  M I N -> (do (vector-> M I (false-vector (vector N) 1 N))
+               (fill-row-vectors M (+ I 1) N)))
+
+(define false-vector
+  V I N -> V  where (> I N)
+  V I N -> (do (vector-> V I false) (false-vector V (+ I 1) N)))
+
+(define mget
+  M I J -> (<-vector (<-vector M I) J))
+
+(define mset
+  M I J Val -> (vector-> (<-vector M I) J Val))
+
+(define populate-matrix
+  [] _ -> done
+  [[F | Calls] | Rows] M -> (do (populate-row (node-index F) Calls M)
+                                (populate-matrix Rows M)))
+
+(define populate-row
+  _ [] _ -> done
+  I [C | Cs] M -> (do (set-edge I (node-index C) M) (populate-row I Cs M)))
+
+(define set-edge
+  _ 0 _ -> done            \\ callee is not a graph node (e.g. a primitive)
+  I J M -> (mset M I J true))
+
+\\ Iterative Warshall: pivot K outermost, then I, then J -
+\\ M[I][J] |= M[I][K] and M[K][J].  The I-loop skips rows where M[I][K] is
+\\ false (nothing to propagate), matching the guard in the 1.0 original.
+(define warshall-iterate
+  M N K -> M  where (> K N)
+  M N K -> (do (warshall-i M N K 1) (warshall-iterate M N (+ K 1))))
+
+(define warshall-i
+  M N K I -> done  where (> I N)
+  M N K I -> (do (if (mget M I K) (warshall-j M N K I 1) done)
+                 (warshall-i M N K (+ I 1))))
+
+(define warshall-j
+  M N K I J -> done  where (> J N)
+  M N K I J -> (do (if (mget M K J) (mset M I J true) done)
+                   (warshall-j M N K I (+ J 1))))
+
+(define collect-reachable
+  [] _ _ _ -> []
+  [S | Ss] Fs M N -> (union (seed-row S Fs M N) (collect-reachable Ss Fs M N)))
+
+\\ A seed always contributes itself (the worklist adds every seed to Seen,
+\\ kernel node or not); a kernel seed also contributes its closure row.
+(define seed-row
+  S Fs M N -> (let I (node-index S)
+                   (if (= I 0) [S] [S | (row-true I Fs M 1 N)])))
+
+(define row-true
+  _ _ _ J N -> []  where (> J N)
+  I Fs M J N -> [(nth J Fs) | (row-true I Fs M (+ J 1) N)]  where (mget M I J)
+  I Fs M J N -> (row-true I Fs M (+ J 1) N))
 
 (define function-calls
   [X | Y] -> (union (function-calls X) (function-calls Y))
@@ -336,6 +449,37 @@
   {symbol --> boolean}
   X -> (element? X (value *primitives*)))
 
+\\ ---------------------------- capabilities ------------------------------
+\\ Group the effectful gateway primitives by capability.  A shaken program
+\\ "cannot reach" a capability when the emitted KL contains none of its
+\\ gateways - a static, certifiable property of the artifact (the code
+\\ literally has no occurrence of the gateway).  Derived from the same
+\\ primitive set the manifest already reports (find-primitives over the
+\\ footprint + user KL), so it stays in lock-step with the eval-strip:
+\\ eval-kl drops out of Prims exactly when the program is eval-free, and
+\\ cannot-reach then lists eval.  Reported as reaches=/cannot-reach= lines;
+\\ builders ignore keys they do not recognise.
+(set *capabilities*
+  [[eval  eval-kl]
+   [read  read-byte]
+   [write write-byte]
+   [file  open close]
+   [clock get-time]])
+
+(define cap-label
+  [L | _] -> L)
+
+(define cap-reached?
+  [_ | Sinks] Prims -> (intersect? Sinks Prims))
+
+(define reaches-caps
+  Prims -> (map (fn cap-label)
+                (rat.filter (/. C (cap-reached? C Prims)) (value *capabilities*))))
+
+(define cannot-reach-caps
+  Prims -> (map (fn cap-label)
+                (rat.filter (/. C (not (cap-reached? C Prims))) (value *capabilities*))))
+
 \\ Used by backends that map primitives to copyable implementation files
 \\ (the Tarver model, retained for the Lisp backend).
 (define primfiles
@@ -411,8 +555,10 @@
           Optional  (rat.filter (/. P (element? P (value *optional-primitives*))) Prims)
           Required  (rat.filter (/. P (not (or (element? P Globals)
                                                (element? P Optional)))) Prims)
-          Sexp (write-manifest-sexp Dir UserFiles Fns Required Optional Globals NeedsEval)
-          Txt  (write-manifest-txt Dir UserFiles Fns Required Optional Globals NeedsEval)
+          Reaches   (reaches-caps Prims)
+          Cannot    (cannot-reach-caps Prims)
+          Sexp (write-manifest-sexp Dir UserFiles Fns Required Optional Globals NeedsEval Reaches Cannot)
+          Txt  (write-manifest-txt Dir UserFiles Fns Required Optional Globals NeedsEval Reaches Cannot)
           done))
 
 (define user-arities
@@ -427,7 +573,7 @@
   [_ | Xs] -> (+ 1 (rat.len Xs)))
 
 (define write-manifest-sexp
-  Dir UserFiles Fns Required Optional Globals NeedsEval ->
+  Dir UserFiles Fns Required Optional Globals NeedsEval Reaches Cannot ->
     (let Sink (open (@s Dir "/ratatoskr.manifest") out)
          W1 (pr-kl-line ["ratatoskr-manifest" 2] Sink)
          W2 (pr-kl-line ["kernel-version" "41.2"] Sink)
@@ -439,10 +585,12 @@
          W8 (pr-kl-line ["primitives-optional" | Optional] Sink)
          W9 (pr-kl-line ["globals" | Globals] Sink)
          WA (pr-kl-line ["needs-eval" NeedsEval] Sink)
+         WB (pr-kl-line ["reaches" | Reaches] Sink)
+         WC (pr-kl-line ["cannot-reach" | Cannot] Sink)
          (close Sink)))
 
 (define write-manifest-txt
-  Dir UserFiles Fns Required Optional Globals NeedsEval ->
+  Dir UserFiles Fns Required Optional Globals NeedsEval Reaches Cannot ->
     (let Sink (open (@s Dir "/ratatoskr.manifest.txt") out)
          W1 (pr (make-string "manifest-version=2~%") Sink)
          W2 (pr (make-string "kernel-version=41.2~%") Sink)
@@ -454,5 +602,7 @@
          W8 (rat.mapc (/. P (pr (make-string "primitive-optional=~A~%" P) Sink)) Optional)
          W9 (rat.mapc (/. P (pr (make-string "global=~A~%" P) Sink)) Globals)
          WA (pr (make-string "needs-eval=~A~%" NeedsEval) Sink)
+         WB (rat.mapc (/. C (pr (make-string "reaches=~A~%" C) Sink)) Reaches)
+         WC (rat.mapc (/. C (pr (make-string "cannot-reach=~A~%" C) Sink)) Cannot)
          (close Sink)))
 

@@ -20,9 +20,17 @@ reachability.
 ## Why the original Yggdrasil used Warshall, and why Ratatoskr dropped it
 
 Tarver's original Yggdrasil computed the full transitive closure of the
-kernel call graph with Warshall's algorithm: Θ(N³) over every kernel symbol.
-That was tolerable for the small kernels it targeted. Against ShenOSKernel
-41.1 it is not:
+kernel call graph with Warshall's algorithm: Θ(N³), and — because `fdg`
+builds the matrix over `extract-Fs Code`, *every symbol* in the kernel, not
+just the defuns — N was the symbol count (thousands), not the ~1,000 defuns.
+The kernel it shipped against was not small either: the bundled 34.6-era
+`KLambda/` is 1,043 defuns / 355 KB, the same order as 41.2. So the cubic
+cost was never actually cheap. The evidence suggests it was meant to be run
+once and persisted — `fdg` reuses an already-bound `*ttable*`, and there is
+a `write-table-to-file`/`ttrans.shen` writer — but that writer is commented
+out and the `array`/`:=`/`for` DSL it needs never shipped, so it is doubtful
+the closure was ever successfully run at full kernel scale. Against
+ShenOSKernel 41.1 the per-shake numbers are:
 
 | | 41.1 numbers |
 |---|---|
@@ -34,6 +42,41 @@ That was tolerable for the small kernels it targeted. Against ShenOSKernel
 
 Beyond the constant-factor pain, the closure computes ~1.27 million
 pairwise answers per shake and then throws away all but one row's worth.
+
+## Why Tarver reached for closure — and why it wasn't a mistake
+
+Read as a shaker, the V³ closure looks like over-engineering: reachability
+from a seed set is O(V + E) with a worklist. But the choice follows from how
+Tarver framed the problem, and the framing is internally coherent.
+
+He did not model "the functions one program reaches." He modelled the *calls
+relation* and materialised its transitive closure as a first-class, named
+artifact — the Function Dependency Graph (`fdg`, held in `*ttable*` as rows
+`[F | everything-F-transitively-calls]`). Given that, the shake is not a
+traversal at all: `footprint` is a union of `assoc` lookups against the table,
+and the entry point reuses an already-bound `*ttable*` instead of recomputing
+it (`(if (bound? *ttable*) (value *ttable*) (fdg))`). A commented-out
+`write-table-to-file` shows he meant to serialise the closure to disk
+(`ttrans.shen`) and ship it.
+
+That is the logician's denotational instinct — native to Shen, a language with
+a built-in Prolog and a sequent-calculus type checker: compute the closure of
+a relation once, store the facts, answer every query by lookup. "Which
+functions does P reach?" becomes "the image of P under `reaches`," and the
+canonical algorithm for the transitive closure of a relation is Warshall. The
+kernel's call structure is port-independent, so in the hub-and-spoke vision the
+FDG is a compute-once-at-the-centre asset every spoke can query — exactly the
+amortisation all-pairs buys.
+
+The irony is that Tarver's own headline architecture argues *against* all-pairs.
+His hub-and-spoke design reduces 14 ports' mutual support from 196 connections
+to 14 — V² → V, the same move as all-pairs closure → single-source
+reachability. The shake wants the spoke, not the full mesh. Warshall was the
+right tool for the object he chose to build (the relation as a queryable
+database) and the wrong tool only for the question the shaker actually asks
+(one program's footprint). At the 34.6-era kernel he targeted the gap was
+immaterial; at 41.2's 1,129 defuns the V³/V² costs are not — which is the whole
+reason Ratatoskr walks the graph instead.
 
 ## What Ratatoskr does instead
 
@@ -91,6 +134,42 @@ is to replace `row-calls`'s linear scan of the row list (O(V) per pop,
 O(V·E) per shake — still ≪ closure) with a property-list lookup, the same
 trick `kernel-defun?` already uses. That is a 10-line change, not a new
 toolchain.
+
+## Capability reporting (`reaches=` / `cannot-reach=`)
+
+The one closure-shaped idea that earns its keep here is *sink* reachability,
+not all-pairs. The manifest now reports, per shake, which effectful
+capabilities the emitted artifact can invoke. The gateways are grouped
+primitives (`*capabilities*` in `ratatoskr.shen`): `eval` → `eval-kl`,
+`read` → `read-byte`, `write` → `write-byte`, `file` → `open`/`close`,
+`clock` → `get-time`. A capability is *unreachable* exactly when the
+emitted KL contains none of its gateways, so it is derived for free from
+the primitive set `find-primitives` already computes — no extra traversal.
+
+`cannot-reach=eval` is a static, certifiable property of the artifact (the
+code literally has no occurrence of `eval-kl`), which is the kind of
+guarantee Tarver's safety-critical framing wants. It also stays in
+lock-step with the eval-strip: `eval-kl` leaves `Prims` precisely when the
+program is eval-free, so `cannot-reach` lists `eval` exactly then.
+
+A future sharper version would precompute *reverse* reachability over the
+transpose graph (which kernel functions can reach a given sink) to drop
+functions kept alive only by an eval edge, and to publish an auditable
+"who can reach X" table for the whole kernel. That is single-source on the
+transpose, still not all-pairs Warshall.
+
+## Optional Warshall closure (homage)
+
+`warshall-footprint` in `ratatoskr.shen` is the finished version of
+Tarver's original — the same iterative Warshall (pivot outermost), built on
+Shen vectors instead of the `array`/`:=`/`for` DSL that never shipped, so it
+actually runs. It is off by default; `(set *use-warshall* true)` routes
+`footprint` through it. It exists for coherence with 1.0 and as a
+differential oracle: on a given graph it must yield the same footprint as
+the worklist `reach`. It fixes 1.0's irreflexive-closure leaf-drop (each
+seed is unioned into its own row). Cost is the catch — O(V³) over a V×V
+matrix, fine on the fixtures' small graphs, impractical on the full kernel —
+which is the whole reason the worklist is the default.
 
 ## When to revisit
 

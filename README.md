@@ -50,6 +50,12 @@ writes to `out/`:
 | `ratatoskr.manifest.txt` | line-oriented contract (`key=value`) |
 | `ratatoskr.manifest` | same, as s-expressions |
 
+The manifest also reports the artifact's effectful **capabilities** —
+`reaches=` / `cannot-reach=` over `{eval, read, write, file, clock}` —
+derived from the emitted primitive set. `cannot-reach=eval` is a static,
+certifiable "this program can never evaluate code at runtime". See
+`docs/reachability.md`.
+
 **Stage 2 — build** (one builder per target port, living in that port's
 repo):
 
