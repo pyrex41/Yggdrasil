@@ -127,6 +127,42 @@ O(V·E) per shake — still ≪ closure) with a property-list lookup, the same
 trick `kernel-defun?` already uses. That is a 10-line change, not a new
 toolchain.
 
+## Capability reporting (`reaches=` / `cannot-reach=`)
+
+The one closure-shaped idea that earns its keep here is *sink* reachability,
+not all-pairs. The manifest now reports, per shake, which effectful
+capabilities the emitted artifact can invoke. The gateways are grouped
+primitives (`*capabilities*` in `ratatoskr.shen`): `eval` → `eval-kl`,
+`read` → `read-byte`, `write` → `write-byte`, `file` → `open`/`close`,
+`clock` → `get-time`. A capability is *unreachable* exactly when the
+emitted KL contains none of its gateways, so it is derived for free from
+the primitive set `find-primitives` already computes — no extra traversal.
+
+`cannot-reach=eval` is a static, certifiable property of the artifact (the
+code literally has no occurrence of `eval-kl`), which is the kind of
+guarantee Tarver's safety-critical framing wants. It also stays in
+lock-step with the eval-strip: `eval-kl` leaves `Prims` precisely when the
+program is eval-free, so `cannot-reach` lists `eval` exactly then.
+
+A future sharper version would precompute *reverse* reachability over the
+transpose graph (which kernel functions can reach a given sink) to drop
+functions kept alive only by an eval edge, and to publish an auditable
+"who can reach X" table for the whole kernel. That is single-source on the
+transpose, still not all-pairs Warshall.
+
+## Optional Warshall closure (homage)
+
+`warshall-footprint` in `ratatoskr.shen` is the finished version of
+Tarver's original — the same iterative Warshall (pivot outermost), built on
+Shen vectors instead of the `array`/`:=`/`for` DSL that never shipped, so it
+actually runs. It is off by default; `(set *use-warshall* true)` routes
+`footprint` through it. It exists for coherence with 1.0 and as a
+differential oracle: on a given graph it must yield the same footprint as
+the worklist `reach`. It fixes 1.0's irreflexive-closure leaf-drop (each
+seed is unioned into its own row). Cost is the catch — O(V³) over a V×V
+matrix, fine on the fixtures' small graphs, impractical on the full kernel —
+which is the whole reason the worklist is the default.
+
 ## When to revisit
 
 Reconsider only if a future feature needs *many-pair* reachability over a
