@@ -20,9 +20,17 @@ reachability.
 ## Why the original Yggdrasil used Warshall, and why Ratatoskr dropped it
 
 Tarver's original Yggdrasil computed the full transitive closure of the
-kernel call graph with Warshall's algorithm: Θ(N³) over every kernel symbol.
-That was tolerable for the small kernels it targeted. Against ShenOSKernel
-41.1 it is not:
+kernel call graph with Warshall's algorithm: Θ(N³), and — because `fdg`
+builds the matrix over `extract-Fs Code`, *every symbol* in the kernel, not
+just the defuns — N was the symbol count (thousands), not the ~1,000 defuns.
+The kernel it shipped against was not small either: the bundled 34.6-era
+`KLambda/` is 1,043 defuns / 355 KB, the same order as 41.2. So the cubic
+cost was never actually cheap. The evidence suggests it was meant to be run
+once and persisted — `fdg` reuses an already-bound `*ttable*`, and there is
+a `write-table-to-file`/`ttrans.shen` writer — but that writer is commented
+out and the `array`/`:=`/`for` DSL it needs never shipped, so it is doubtful
+the closure was ever successfully run at full kernel scale. Against
+ShenOSKernel 41.1 the per-shake numbers are:
 
 | | 41.1 numbers |
 |---|---|
